@@ -1,0 +1,37 @@
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { db } from '@/lib/db';
+import { currentUser, mayCreate } from '@/lib/permissions';
+import { error, jsonBody } from '@/lib/api';
+import { jobInclude, serializeJob, toDbStatus } from '@/lib/serialize';
+import { statuses, transitions } from '@/lib/workflow';
+
+const schema=z.object({next:z.enum(statuses),reason:z.string().trim().max(1000).optional(),approvalEvidenceUrl:z.url().optional()});
+export async function POST(request:Request,{params}:{params:Promise<{id:string}>}) {
+ const user=await currentUser();if(!user)return error('Sign in required',401);
+ const parsed=schema.safeParse(await jsonBody(request));if(!parsed.success)return error('Invalid transition');
+ const {id}=await params;const {next,reason,approvalEvidenceUrl}=parsed.data;
+ const job=await db.job.findUnique({where:{id},include:{client:{include:{qaMembers:{include:{user:true}}}}}});if(!job)return error('Job not found',404);
+ const current=Object.keys(toDbStatus).find(k=>toDbStatus[k as keyof typeof toDbStatus]===job.status) as keyof typeof toDbStatus;
+ if(!transitions[current].includes(next))return error(`Cannot move ${current} to ${next}`,409);
+ const isMaker=user.role==='MAKER'&&job.assigneeId===user.id;
+ const isQa=user.role==='QA'&&job.client.qaMembers.some(q=>q.userId===user.id);
+ const permitted=mayCreate(user)||(current==='Briefed'&&isMaker)||(current==='In Production'&&isMaker)||(current==='Internal Review'&&isQa);
+ if(!permitted)return error('Not permitted',403);
+ if((next==='Internal Review'||next==='Client Review'||next==='Approved')&&!job.reviewUrl)return error('A Figma or Frame.io review link is required',409);
+ if(next==='Internal Review'&&(!job.client.qaMembers.length||job.client.qaMembers.some(q=>!q.user.slackUserId)))return error('Client QA team and Slack IDs must be configured',409);
+ if(next==='In Production'&&current!=='Briefed'&&!reason)return error('Changes Required needs a reason or feedback reference');
+ if(next==='Approved'&&!approvalEvidenceUrl)return error('Record the external client approval evidence URL');
+ try {
+  const updated=await db.$transaction(async tx=>{
+   const result=await tx.job.updateMany({where:{id,status:job.status},data:{status:toDbStatus[next],approvedBy:next==='Approved'?user.name:undefined,approvedAt:next==='Approved'?new Date():undefined}});
+   if(result.count!==1)throw new Error('Job changed while you were editing');
+   await tx.auditEvent.create({data:{jobId:id,actorId:user.id,action:next==='In Production'&&current!=='Briefed'?'review.changes_required':'job.transition',before:{status:job.status},after:{status:toDbStatus[next],approvalEvidenceUrl},reason}});
+   const type=next==='Internal Review'?'review.internal.ready':next==='Client Review'?'review.client.ready':next==='Approved'?'job.approved':next==='In Production'&&current!=='Briefed'?'review.changes_required':'job.transition';
+   await tx.outboxEvent.create({data:{type,payload:{jobId:id,clientId:job.clientId,from:job.status,to:toDbStatus[next],reason,qaSlackIds:next==='Internal Review'?job.client.qaMembers.map(q=>q.user.slackUserId).filter(Boolean):[]}}});
+   if(next==='Approved')await tx.deliveryBatch.create({data:{jobId:id}});
+   return tx.job.findUniqueOrThrow({where:{id},include:jobInclude});
+  });
+  return NextResponse.json({job:serializeJob(updated)});
+ } catch(e) {return error((e as Error).message,409)}
+}

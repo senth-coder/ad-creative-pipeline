@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  STRATEGIST
+  MAKER
+  QA
+  MEDIA_BUYER
+}
+
+enum JobStatus {
+  BRIEFED
+  IN_PRODUCTION
+  INTERNAL_REVIEW
+  CLIENT_REVIEW
+  APPROVED
+  DELIVERED
+}
+
+enum Source {
+  MANUAL
+  MOTION
+}
+
+enum DeliveryStatus {
+  PENDING
+  TRANSFERRING
+  DRIVE_VERIFIED
+  SLACK_NOTIFIED
+  FAILED
+  COMPLETE
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  role         Role
+  slackUserId  String?
+  assignedJobs Job[]        @relation("Assignee")
+  qaClients    ClientQa[]
+  auditEvents  AuditEvent[]
+}
+
+model Client {
+  id           String     @id @default(cuid())
+  name         String     @unique
+  code         String     @unique
+  driveRootId  String?
+  mediaBuyerId String?
+  campaigns    Campaign[]
+  jobs         Job[]
+  qaMembers    ClientQa[]
+}
+
+model ClientQa {
+  clientId String
+  userId   String
+  client   Client @relation(fields: [clientId], references: [id])
+  user     User   @relation(fields: [userId], references: [id])
+  @@id([clientId, userId])
+}
+
+model Campaign {
+  id       String    @id @default(cuid())
+  clientId String
+  name     String
+  client   Client    @relation(fields: [clientId], references: [id])
+  concepts Concept[]
+  jobs     Job[]
+  @@unique([clientId, name])
+}
+
+model Concept {
+  id         String   @id @default(cuid())
+  campaignId String
+  name       String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+  jobs       Job[]
+}
+
+model Job {
+  id               String          @id @default(cuid())
+  number           Int             @unique @default(autoincrement())
+  clientId         String
+  campaignId       String
+  conceptId        String?
+  title            String
+  type             String
+  status           JobStatus       @default(BRIEFED)
+  source           Source          @default(MANUAL)
+  sourceExternalId String?         @unique
+  dueAt            DateTime
+  assigneeId       String?
+  reviewUrl        String?
+  approvedBy       String?
+  approvedAt       DateTime?
+  templateSnapshot Json?
+  ruleSnapshot     Json?
+  brief            Json
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  client           Client          @relation(fields: [clientId], references: [id])
+  campaign         Campaign        @relation(fields: [campaignId], references: [id])
+  concept          Concept?        @relation(fields: [conceptId], references: [id])
+  assignee         User?           @relation("Assignee", fields: [assigneeId], references: [id])
+  variants         Variant[]
+  deliveryBatches  DeliveryBatch[]
+  auditEvents      AuditEvent[]
+  @@index([status, dueAt])
+}
+
+model Variant {
+  id            String         @id @default(cuid())
+  jobId         String
+  code          String
+  spec          Json
+  origin        String
+  job           Job            @relation(fields: [jobId], references: [id])
+  assetVersions AssetVersion[]
+  @@unique([jobId, code])
+}
+
+model AssetVersion {
+  id              String  @id @default(cuid())
+  variantId       String
+  version         Int
+  sourceUrl       String?
+  externalAssetId String?
+  checksum        String?
+  approved        Boolean @default(false)
+  variant         Variant @relation(fields: [variantId], references: [id])
+  @@unique([variantId, version])
+}
+
+model DeliveryBatch {
+  id             String         @id @default(cuid())
+  jobId          String
+  status         DeliveryStatus @default(PENDING)
+  driveFolderId  String?
+  slackReceiptId String?
+  error          String?
+  createdAt      DateTime       @default(now())
+  completedAt    DateTime?
+  job            Job            @relation(fields: [jobId], references: [id])
+  items          DeliveryItem[]
+}
+
+model DeliveryItem {
+  id            String         @id @default(cuid())
+  batchId       String
+  variantCode   String
+  version       Int
+  sourceAssetId String
+  finalName     String
+  driveFileId   String?
+  checksum      String?
+  status        DeliveryStatus @default(PENDING)
+  batch         DeliveryBatch  @relation(fields: [batchId], references: [id])
+  @@unique([batchId, variantCode, version])
+}
+
+model BriefTemplate {
+  id      String  @id @default(cuid())
+  type    String
+  version Int
+  fields  Json
+  active  Boolean @default(true)
+  @@unique([type, version])
+}
+
+model VariantRule {
+  id      String  @id @default(cuid())
+  type    String
+  version Int
+  rule    Json
+  active  Boolean @default(true)
+  @@unique([type, version])
+}
+
+model NamingRule {
+  id           String   @id @default(cuid())
+  clientId     String?
+  version      Int
+  protocolDate DateTime
+  spec         Json
+  active       Boolean  @default(false)
+}
+
+model InboundEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  externalId  String    @unique
+  payload     Json
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+}
+
+model OutboxEvent {
+  id          String    @id @default(cuid())
+  type        String
+  payload     Json
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  deliveredAt DateTime?
+  @@index([deliveredAt, createdAt])
+}
+
+model AuditEvent {
+  id            String   @id @default(cuid())
+  jobId         String?
+  actorId       String?
+  action        String
+  before        Json?
+  after         Json?
+  reason        String?
+  correlationId String?
+  at            DateTime @default(now())
+  job           Job?     @relation(fields: [jobId], references: [id])
+  actor         User?    @relation(fields: [actorId], references: [id])
+}
