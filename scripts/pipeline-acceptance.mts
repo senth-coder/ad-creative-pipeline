@@ -46,7 +46,7 @@ try{
  const ops={checklist:['offer','brand','claims','mobile','format','access']};
  await call(`/api/jobs/${job.id}/operations`,'PATCH',ops,'MAKER');
  let assets:any[]=[];
- for(const code of job.variants){assets.push((await call(`/api/jobs/${job.id}/assets`,'POST',{variantCode:code,version:1,briefRevision:1,sourceBriefUrl:'https://example.com/brief',sourceUrl:`https://frame.io/asset-${code}`,externalAssetId:`test-${code}`,naming:{scope:'TEST',type:'STATIC',descriptor:`job${job.number}-${code.toLowerCase()}`,aspect:'1x1',version:1,extension:'png'},copyText:'Sample creative',revisionNote:'Initial test version'},'MAKER',201)).asset);}
+ for(const code of job.variants){assets.push((await call(`/api/jobs/${job.id}/assets`,'POST',{variantCode:code,version:1,briefRevision:1,sourceBriefUrl:'https://example.com/brief',sourceUrl:`https://drive.google.com/file/d/test-approved-source-${code}/view`,externalAssetId:`test-${code}`,naming:{scope:'TEST',type:'STATIC',descriptor:`job${job.number}-${code.toLowerCase()}`,aspect:'1x1',version:1,extension:'png'},copyText:'Sample creative',revisionNote:'Initial test version'},'MAKER',201)).asset);}
  await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Internal Review'},'MAKER');
  await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Client Review'},'QA',409);
  for(const a of assets)await call(`/api/jobs/${job.id}/assets`,'PATCH',{assetId:a.id,humanChecks:['brand'],evidenceUrl:'https://frame.io/review',copyVerified:true,note:'Test QA complete'},'QA');
@@ -69,6 +69,10 @@ try{
  const handoff=await db.outboxEvent.findFirstOrThrow({where:{type:'review.internal.ready',payload:{path:['jobId'],equals:job.id}},orderBy:{createdAt:'desc'}});assert.deepEqual((handoff.payload as any).qaSlackIds,['UADMIN']);assertions++;
  for(const a of assets)await call(`/api/jobs/${job.id}/assets`,'PATCH',{assetId:a.id,humanChecks:['brand'],evidenceUrl:'https://frame.io/new-review',copyVerified:true,note:'Re-reviewed after revision'},'QA');
  await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Client Review'},'QA');
+ await db.assetVersion.update({where:{id:assets[0].id},data:{sourceUrl:'https://frame.io/review-only'}});
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Approved',approvalEvidenceUrl:'https://example.com/new-approval'},'ADMIN',409);
+ assert.equal((await call(`/api/jobs/${job.id}`)).job.status,'Client Review');assertions++;
+ await db.assetVersion.update({where:{id:assets[0].id},data:{sourceUrl:assets[0].sourceUrl}});
  job=(await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Approved',approvalEvidenceUrl:'https://example.com/new-approval'},'ADMIN')).job;
  let batch=(await call(`/api/delivery/${job.deliveryBatchId}`)).batch;assert.equal(batch.items.length,3);assertions++;
  assert.equal(await db.outboxEvent.count({where:{type:'delivery.ready',payload:{path:['batchId'],equals:batch.id}}}),1);assertions++;
@@ -88,6 +92,7 @@ try{
  assert.equal((await call(`/api/jobs/${job.id}`)).job.status,'Approved');assertions++;
  const completed=await receipt(batch.id,{id:'slack-ok',type:'slack.dm_confirmed',receiptId:'test-ts',recipientSlackId:'UMEDIA_BUYER'});assert.equal(completed.delivered,true);assertions++;
  assert.equal((await call(`/api/jobs/${job.id}`)).job.status,'Delivered');assertions++;
+ await call(`/api/jobs/${job.id}/assets`,'PATCH',{assetId:assets[0].id,humanChecks:['brand'],evidenceUrl:'https://frame.io/changed-review',copyVerified:true,note:'Should not alter completed QA'},'QA',409);
  await receipt(batch.id,{id:'slack-ok',type:'slack.dm_confirmed',receiptId:'test-ts',recipientSlackId:'UMEDIA_BUYER'});
  const launch={jobId:job.id,variantCode:'A',platform:'Meta',account:'Test account',status:'Live',plannedAt:'',launchedAt:'2026-10-08',destinationUrl:'https://example.com/product',adUrl:'https://example.com/ad',campaign:'Test campaign',adSet:'Test set',notes:'Recorded test launch; no ad-platform call'};
  await call('/api/operations/launches','POST',launch,'MEDIA_BUYER');

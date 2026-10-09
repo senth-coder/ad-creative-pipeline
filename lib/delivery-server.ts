@@ -1,3 +1,4 @@
+import {driveSourceId} from './worker';
 import {lockClient} from '@/lib/locking';
 import type {Prisma} from '@prisma/client';
 import {releaseProblem} from './assurance';
@@ -18,6 +19,8 @@ export async function queueDelivery(tx:Prisma.TransactionClient,batchId:string,a
  const tracked=all.map(serializeAsset),g=readGovernance(batch.job.client.governance);
  const gate=releaseProblem(batch.job.variants.map(v=>v.code),tracked,g,batch.job.client.governanceVersion);if(gate)throw new Error(gate);
  const selected=batch.job.variants.map(v=>tracked.filter(a=>a.variantCode===v.code).sort((a,b)=>b.version-a.version)[0]);
+ // Fail inside the approval transaction, before the job becomes locked.
+ for(const asset of selected)driveSourceId(asset.sourceUrl);
  if(new Set(selected.map(a=>a.filename)).size!==selected.length)throw new Error('Filename collision');
  if(!batch.job.client.driveRootId)throw new Error('Client Drive folder is not configured');
  const buyer=batch.job.client.mediaBuyerId?await tx.user.findUnique({where:{id:batch.job.client.mediaBuyerId}}):null;
