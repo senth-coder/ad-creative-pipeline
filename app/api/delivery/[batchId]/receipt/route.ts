@@ -21,7 +21,10 @@ export async function POST(request:Request,{params}:{params:Promise<{batchId:str
     if(batch.driveFolderId&&batch.driveFolderId!==event.driveFolderId)throw new Error('Drive folder mismatch');
     await tx.deliveryItem.update({where:{id:item.id},data:{driveFileId:event.driveFileId,checksum:event.checksum,status:'DRIVE_VERIFIED'}});
     await tx.deliveryBatch.update({where:{id:batchId},data:{driveFolderId:event.driveFolderId}});
-   }else await tx.deliveryBatch.update({where:{id:batchId},data:{slackReceiptId:event.receiptId}});
+   }else {
+    if(!batch.driveFolderId||!batch.items.length||!batch.items.every(i=>i.driveFileId&&i.status==='DRIVE_VERIFIED'))throw new Error('Verify all Drive assets before confirming the Slack handoff');
+    await tx.deliveryBatch.update({where:{id:batchId},data:{slackReceiptId:event.receiptId}});
+   }
    await tx.inboundEvent.create({data:{provider:'delivery',externalId:`delivery:${event.id}`,payload:json as object,processedAt:new Date()}});
    const refreshed=await tx.deliveryBatch.findUniqueOrThrow({where:{id:batchId},include:{items:true}});
    const driveReady=refreshed.items.length>0&&refreshed.items.every(i=>i.driveFileId&&i.status==='DRIVE_VERIFIED')&&Boolean(refreshed.driveFolderId);

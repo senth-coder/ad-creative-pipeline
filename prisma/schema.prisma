@@ -27,6 +27,9 @@ enum JobStatus {
 enum Source {
   MANUAL
   MOTION
+  TALLY
+  SLACK
+  NOTION
 }
 
 enum DeliveryStatus {
@@ -43,6 +46,7 @@ model User {
   email        String       @unique
   name         String
   role         Role
+  weeklyCapacityHours Int @default(0)
   slackUserId  String?
   assignedJobs Job[]        @relation("Assignee")
   qaClients    ClientQa[]
@@ -58,6 +62,7 @@ model Client {
   campaigns    Campaign[]
   jobs         Job[]
   qaMembers    ClientQa[]
+  plan         ClientPlan?
 }
 
 model ClientQa {
@@ -93,6 +98,9 @@ model Job {
   campaignId       String
   conceptId        String?
   title            String
+  operations       Json?
+  parentJobId      String?
+  launches         LaunchRecord[]
   type             String
   status           JobStatus       @default(BRIEFED)
   source           Source          @default(MANUAL)
@@ -201,6 +209,9 @@ model InboundEvent {
   payload     Json
   receivedAt  DateTime  @default(now())
   processedAt DateTime?
+  dismissedAt DateTime?
+  duplicateOfId String?
+  jobId String?
 }
 
 model OutboxEvent {
@@ -225,4 +236,39 @@ model AuditEvent {
   at            DateTime @default(now())
   job           Job?     @relation(fields: [jobId], references: [id])
   actor         User?    @relation(fields: [actorId], references: [id])
+}
+
+model ClientPlan {
+  id String @id @default(cuid())
+  clientId String @unique
+  client Client @relation(fields: [clientId], references: [id])
+  cycleStart DateTime
+  cadenceDays Int @default(7)
+  targetJobs Int @default(0)
+  targetVariants Int @default(0)
+  formatMix String @default("")
+  approverEmail String @default("")
+  releaseOwnerEmail String @default("")
+  notes String @default("")
+  updatedAt DateTime @updatedAt
+}
+
+model LaunchRecord {
+  id String @id @default(cuid())
+  jobId String
+  job Job @relation(fields: [jobId], references: [id])
+  variantCode String
+  platform String
+  account String
+  status String @default("Not launched")
+  plannedAt DateTime?
+  launchedAt DateTime?
+  destinationUrl String @default("")
+  adUrl String @default("")
+  campaign String @default("")
+  adSet String @default("")
+  notes String @default("")
+  updatedAt DateTime @updatedAt
+  @@unique([jobId, variantCode, platform, account])
+  @@index([status, plannedAt])
 }

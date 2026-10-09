@@ -15,5 +15,5 @@ test('workflow rejects skipping review and manual delivery',()=>{
  const job=seedJobs[0];
  assert.throws(()=>transition(job,'Approved','Tester'));
  assert.throws(()=>transition(job,'Delivered','Tester'));
- assert.equal(transition(job,'In Production','Tester').status,'In Production');
+ assert.equal(transition({...job,assignee:'Alex'},'In Production','Tester').status,'In Production');
 });

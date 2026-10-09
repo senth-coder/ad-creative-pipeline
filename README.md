@@ -46,3 +46,57 @@ npm run build
 ```
 
 The protocol's bracketed upload patterns and examples disagree on duplicated `OPENENTRY`, `FUNNELSTAGE`, and one `SKS-` prefix. The naming module follows the explicit examples. Confirm those exceptions before enabling automated delivery. The provided screenshots were not available, so the visual design is an independent implementation.
+
+## Operations expansion — October 8, 2026
+
+- **Planning:** weekly/fortnightly client cycles, job and variant targets, format mix, internal approval/release owners and maker capacity. Actuals use confirmed delivery dates; workload uses estimated hours for open jobs due before the next seven-day boundary, including overdue jobs. Targets and capacities start unset.
+- **Intake:** Motion plus normalized Tally, Slack and Notion requests, repeated offers/attachments, duplicate suggestions and dismissal history. A transaction claims each inbound event once before a strategist creates its job.
+- **QA & blockers:** six pre-review checks, priority, effort estimate, blockers with owner/follow-up, revision reason/link/return date, and a separate external client approval URL. Revision transitions reset the checklist.
+- **Attention:** open jobs with blockers, due dates reached, or overdue revision return dates.
+- **Launches:** delivered variants can be recorded by platform/account as Not launched, Scheduled, Live, Paused or Needs retest. Scheduled and live states require their dates/links. Learning notes carry into a linked iteration brief. Launching never changes production status or marks a job Delivered.
+- **Activity:** latest 100 scoped server audit entries. Preview explicitly has no shared audit history.
+- Dark mode remains permanent. Production statuses and protocol filenames are unchanged.
+
+### Upgrade
+
+Run `npm run db:migrate` against the connected PostgreSQL database before enabling server mode with this release. Migration `20261008_operations` adds optional operations metadata, client plans, maker capacities, intake disposition and launch records; it preserves existing jobs and delivery records. The UI still runs without a database in preview mode. No live integrations or existing Notion records are enabled/imported by deploying this code.
+
+### New endpoints
+
+| Endpoint | Purpose | Access |
+| --- | --- | --- |
+| GET/POST/PATCH `/api/operations/plans` | Read plans/team, save client plan, save maker capacity | Admin/strategist |
+| GET/PATCH `/api/operations/intake` | Queue/history, dismiss or mark duplicate with reason | Admin/strategist |
+| PATCH `/api/jobs/:id/operations` | Save readiness, blocker, revision and evidence details | Admin/strategist, assigned maker, client QA; locked after approval |
+| GET/POST `/api/operations/launches` | Read scoped launches; save platform/account launch record | Write: admin/strategist/assigned client media buyer |
+| GET `/api/operations/activity` | Latest scoped audit entries | Signed-in users, role filtered |
+| POST `/api/webhooks/intake/:provider` | Normalized inbound `tally`, `slack` or `notion` event | HMAC `x-make-signature` with `MAKE_WEBHOOK_SECRET` |
+
+Normalized intake body (Make maps source fields; sign the exact JSON bytes with HMAC-SHA256):
+
+```json
+{
+  "id": "stable-source-submission-id",
+  "title": "Autumn creative request",
+  "client": "Configured client name",
+  "sourceUrl": "https://example.com/original-request",
+  "brief": {"objective": "Explain the approved offer"},
+  "offers": [{"name": "Offer one", "price": "$10", "url": "https://example.com/offer"}],
+  "attachments": [{"name": "Approved reference", "url": "https://example.com/reference"}]
+}
+```
+
+Keep source IDs stable across retries. Requests create inbox candidates, never approved or delivered jobs. Slack intake should be an explicitly selected request or workflow, not indiscriminate DM ingestion. Notion migration uses this same intake contract and retains the original page URL. Existing Uploaded/Live labels are not proof of delivery; verify Drive and Slack receipts before moving any imported job to Delivered.
+
+Make should handle `job.blocked` (reason/owner/follow-up) and the enriched `review.changes_required` event (feedback URL, return date, assignee Slack ID), alongside existing events. Approval/release owner emails are routing information; they do not grant permissions or replace the configured client QA/media-buyer mappings. Deadline reminders require a separate scheduled Make scenario; saving a date alone does not send reminders.
+
+### Remaining live setup
+
+1. Connect PostgreSQL and apply both migrations; bootstrap the admin.
+2. Configure Google sign-in for `ghostgrowth.io` and the actual deployment domain, then rebuild with `NEXT_PUBLIC_DATA_MODE=server`.
+3. Add real team members, Slack IDs, client QA and media-buyer mappings, and Drive root folders in Settings.
+4. Set agreed client targets/capacities and owners in Planning.
+5. Connect Make's intake/outbox/delivery scenarios and Figma/Frame.io/Drive/Slack accounts; run one complete test job.
+6. Confirm the documented protocol naming exceptions before live automated delivery.
+
+Performance notes are manual in this release. Automatic ad-platform metrics, asset-rights expiry and a bulk historical Notion migration remain future work. The additional data routes have passed type/build checks; live database transactions and provider transfers must be acceptance-tested after credentials are configured.
