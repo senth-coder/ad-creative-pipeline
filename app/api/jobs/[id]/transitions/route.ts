@@ -1,3 +1,5 @@
+import {lockClient} from '@/lib/locking';
+import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
@@ -7,6 +9,7 @@ import { jobInclude, serializeJob, toDbStatus } from '@/lib/serialize';
 import { operationsFor, reviewReadiness } from '@/lib/operations';
 import {routeQa,releaseProblem} from '@/lib/assurance';
 import {readGovernance,serializeAsset} from '@/lib/assurance-server';
+import {queueDelivery} from '@/lib/delivery-server';
 import { statuses, transitions } from '@/lib/workflow';
 
 const schema=z.object({next:z.enum(statuses),reason:z.string().trim().max(1000).optional(),approvalEvidenceUrl:z.url().refine(v=>/^https?:\/\//i.test(v)).optional()});
@@ -34,7 +37,7 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
  const people=await db.user.findMany({where:{email:{in:[governance.primaryQaEmail,governance.backupQaEmail].map(e=>e.toLowerCase())}}});
  const route=routeQa(governance,people.map(p=>({...p,onboarding:undefined})));if(!route.person)return error(route.reason,409);qaSlackIds=[route.person.slackUserId!];
  }
- if(next==='Approved'){
+ if(next==='Approved'||next==='Client Review'){
  const assets=await db.assetVersion.findMany({where:{variant:{jobId:id}},include:{variant:true}});
  const problem=releaseProblem(job.variants.map(v=>v.code),assets.map(serializeAsset),governance,job.client.governanceVersion);if(problem)return error(problem,409);
  }
@@ -43,12 +46,16 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
  if(next==='Approved'&&!evidence)return error('Record the external client approval evidence URL');
  try {
   const updated=await db.$transaction(async tx=>{
+   await lockClient(tx,job.clientId);
+   const liveClient=await tx.client.findUniqueOrThrow({where:{id:job.clientId}});
+   if(liveClient.governanceVersion!==job.client.governanceVersion)throw new Error('Client rules changed. Review again.');
    const result=await tx.job.updateMany({where:{id,status:job.status,updatedAt:job.updatedAt},data:{operations:{...operations,...(revision?{checklist:[],approvalEvidenceUrl:''}:{}),...(next==='Approved'?{approvalEvidenceUrl:evidence}:{})},status:toDbStatus[next],approvedBy:next==='Approved'?user.name:undefined,approvedAt:next==='Approved'?new Date():undefined}});
    if(result.count!==1)throw new Error('Job changed while you were editing');
    await tx.auditEvent.create({data:{jobId:id,actorId:user.id,action:next==='In Production'&&current!=='Briefed'?'review.changes_required':'job.transition',before:{status:job.status},after:{status:toDbStatus[next],approvalEvidenceUrl:evidence},reason:effectiveReason}});
    const type=next==='Internal Review'?'review.internal.ready':next==='Client Review'?'review.client.ready':next==='Approved'?'job.approved':next==='In Production'&&current!=='Briefed'?'review.changes_required':'job.transition';
    await tx.outboxEvent.create({data:{type,payload:{jobId:id,clientId:job.clientId,from:job.status,to:toDbStatus[next],reason:effectiveReason,feedbackUrl:operations.feedbackUrl,revisionDue:operations.revisionDue,assigneeSlackId:job.assignee?.slackUserId,approvalOwnerEmail:job.client.plan?.approverEmail,releaseOwnerEmail:job.client.plan?.releaseOwnerEmail,qaSlackIds}}});
-   if(next==='Approved')await tx.deliveryBatch.create({data:{jobId:id}});
+   if(revision)await tx.assetVersion.updateMany({where:{variant:{jobId:id}},data:{approved:false,review:Prisma.DbNull}});
+   if(next==='Approved'){const batch=await tx.deliveryBatch.create({data:{jobId:id}});await queueDelivery(tx,batch.id,user.id);}
    return tx.job.findUniqueOrThrow({where:{id},include:jobInclude});
   });
   return NextResponse.json({job:serializeJob(updated)});

@@ -14,3 +14,4 @@ export const typeFields:Record<CreativeType,BriefField[]>={
  Carousel:[{key:'cardCount',label:'Number of cards',placeholder:'e.g. 5',required:true},{key:'dimensions',label:'Dimensions',placeholder:'e.g. 1080 × 1080'}],
  Motion:[{key:'duration',label:'Target duration',placeholder:'e.g. 6 seconds',required:true},{key:'aspectRatio',label:'Aspect ratio',placeholder:'e.g. 9:16',required:true},{key:'animationNotes',label:'Animation direction',placeholder:'Describe motion and pacing'}]
 };
+export function requiredBriefProblem(fields:BriefField[],brief:Record<string,string>={}){const missing=fields.filter(f=>f.required&&!brief[f.key]?.trim());return missing.length?'Complete required brief fields: '+missing.map(f=>f.label).join(', '):null;}

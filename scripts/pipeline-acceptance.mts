@@ -1,0 +1,102 @@
+/** Isolated acceptance suite. Never run against a production database. */
+import assert from 'node:assert/strict';
+import {createHmac} from 'node:crypto';
+import {encode} from 'next-auth/jwt';
+import {PrismaClient} from '@prisma/client';
+const url=process.env.DATABASE_URL||'';
+if(!/^postgresql:\/\/[^@]+@(127\.0\.0\.1|localhost):\d+\/ghost_mvp_test(?:\?|$)/.test(url))throw new Error('This suite requires an isolated localhost ghost_mvp_test database');
+const base=process.env.ACCEPTANCE_BASE_URL||'http://127.0.0.1:3100';
+if(!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(base))throw new Error('Local test server required');
+const db=new PrismaClient();const run=Date.now().toString();let assertions=0;
+async function call(path:string,method='GET',data?:unknown,role='ADMIN',expected=200){
+ const email=`${role.toLowerCase()}-${run}@example.com`;
+ const secret=process.env.AUTH_SECRET!;
+ const token=await encode({token:{email,name:role,sub:email},secret,salt:'authjs.session-token'});
+ const r=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Cookie:`authjs.session-token=${token}`},body:data===undefined?undefined:JSON.stringify(data)});
+ const raw=await r.text();let result:any;try{result=JSON.parse(raw)}catch{throw new Error(`${method} ${path}: ${r.status} ${raw.slice(0,300)}`)};
+ assert.equal(r.status,expected,`${method} ${path}: ${JSON.stringify(result)}`);assertions++;return result;
+}
+async function receipt(batch:string,event:unknown,expected=200){const body=JSON.stringify(event);const signature=createHmac('sha256',process.env.MAKE_WEBHOOK_SECRET!).update(body).digest('hex');const r=await fetch(`${base}/api/delivery/${batch}/receipt`,{method:'POST',headers:{'Content-Type':'application/json','x-integration-signature':signature},body});const result=await r.json();assert.equal(r.status,expected,JSON.stringify(result));assertions++;return result;}
+try{
+ for(const role of ['ADMIN','STRATEGIST','MAKER','QA','MEDIA_BUYER'] as const)await db.user.create({data:{email:`${role.toLowerCase()}-${run}@example.com`,name:`${role}-${run}`,role,slackUserId:`U${role}`}});
+ const primary=await db.user.findUniqueOrThrow({where:{email:`qa-${run}@example.com`}});
+ const admin=await db.user.findUniqueOrThrow({where:{email:`admin-${run}@example.com`}});
+ const client=(await call('/api/admin/clients','POST',{name:`Test-${run}`,code:`T${run.slice(-10)}`,driveRootId:'test-root',mediaBuyerEmail:`media_buyer-${run}@example.com`,qaEmails:[primary.email]},'ADMIN',201)).client;
+ // Seed confirmed routing in test fixtures; production confirmation remains Senth-only.
+ const g={primaryQaEmail:primary.email,backupQaEmail:admin.email,routingConfirmed:true,rulesConfirmed:true,guidelinesUrl:'https://example.com/guidelines',briefTemplateUrl:'',publisher:'Test',rules:[{id:'brand',label:'Brand checked',kind:'human',phrase:'',sourceUrl:'https://example.com/guidelines',active:true}]};
+ await db.client.update({where:{id:client.id},data:{governance:g,governanceVersion:1}});
+ await call('/api/assurance/clients','POST',{clientId:client.id,expectedVersion:1,governance:{...g,primaryQaEmail:admin.email,backupQaEmail:primary.email}},'STRATEGIST',403);
+ const intakePayload={id:`intake-${run}`,title:'Tally acceptance',client:client.name,brief:{objective:'Test intake'}};
+ const intakeBody=JSON.stringify(intakePayload);const intakeSig=createHmac('sha256',process.env.MAKE_WEBHOOK_SECRET!).update(intakeBody).digest('hex');
+ async function sendIntake(){const r=await fetch(base+'/api/webhooks/intake/tally',{method:'POST',headers:{'x-make-signature':intakeSig},body:intakeBody});assert.equal(r.status,200);assertions++;return r.json();}
+ const intake=await sendIntake();assert.equal((await sendIntake()).id,intake.id);assertions++;
+ await call('/api/operations/intake','GET',undefined,'MAKER',403);
+ const brief={title:'Acceptance creative',client:client.name,campaign:'MVP acceptance',concept:'Test concept',type:'Static',due:'2026-10-15',assignee:`MAKER-${run}`,source:'Manual',brief:{objective:'Test delivery',audience:'Test audience',offer:'Sample offer',dimensions:'1080x1080'}};
+ await call('/api/jobs','POST',{...brief,brief:{}},'ADMIN',409);
+ await call('/api/jobs','POST',brief,'MAKER',403);
+ const intakeBrief={...brief,source:'Tally',brief:{...brief.brief,intakeEventId:intake.id}};
+ await call('/api/jobs','POST',intakeBrief,'STRATEGIST',201);await call('/api/jobs','POST',intakeBrief,'STRATEGIST',409);
+ await call('/api/operations/intake','PATCH',{id:intake.id,reason:'Already converted'},'STRATEGIST',409);
+ let job=(await call('/api/jobs','POST',brief,'STRATEGIST',201)).job;
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Approved'},'ADMIN',409);
+ job=(await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'In Production'},'MAKER')).job;
+ await call(`/api/jobs/${job.id}`,'PATCH',{reviewUrl:'javascript:alert(1)'},'MAKER',400);
+ await call(`/api/jobs/${job.id}`,'PATCH',{reviewUrl:'https://frame.io/test-review'},'MAKER');
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Internal Review'},'MAKER',409);
+ const ops={checklist:['offer','brand','claims','mobile','format','access']};
+ await call(`/api/jobs/${job.id}/operations`,'PATCH',ops,'MAKER');
+ let assets:any[]=[];
+ for(const code of job.variants){assets.push((await call(`/api/jobs/${job.id}/assets`,'POST',{variantCode:code,version:1,briefRevision:1,sourceBriefUrl:'https://example.com/brief',sourceUrl:`https://frame.io/asset-${code}`,externalAssetId:`test-${code}`,naming:{scope:'TEST',type:'STATIC',descriptor:`job${job.number}-${code.toLowerCase()}`,aspect:'1x1',version:1,extension:'png'},copyText:'Sample creative',revisionNote:'Initial test version'},'MAKER',201)).asset);}
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Internal Review'},'MAKER');
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Client Review'},'QA',409);
+ for(const a of assets)await call(`/api/jobs/${job.id}/assets`,'PATCH',{assetId:a.id,humanChecks:['brand'],evidenceUrl:'https://frame.io/review',copyVerified:true,note:'Test QA complete'},'QA');
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Client Review'},'QA');
+ await call(`/api/jobs/${job.id}`,'PATCH',{reviewUrl:'https://frame.io/changed'},'MAKER',409);
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Approved'},'ADMIN',400);
+ // A revision round must invalidate all asset QA and old approval evidence.
+ await call(`/api/jobs/${job.id}/operations`,'PATCH',{...ops,revisionReason:'Fix requested copy',feedbackUrl:'https://frame.io/feedback',revisionDue:'2026-10-16',approvalEvidenceUrl:'https://example.com/old-approval'},'ADMIN');
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'In Production'},'ADMIN');
+ const updatedBrief=(await call(`/api/jobs/${job.id}`,'PATCH',{brief:{...brief.brief,offer:'Revised offer'}},'STRATEGIST')).job;assert.equal(updatedBrief.briefRevision,2);assertions++;
+ await call(`/api/jobs/${job.id}/assets`,'PATCH',{assetId:assets[0].id,humanChecks:['brand'],evidenceUrl:'https://frame.io/review',copyVerified:true,note:'Old asset'},'QA',409);
+ const reset=await call(`/api/jobs/${job.id}/assets`);assert.ok(reset.assets.every((a:any)=>!a.review));assertions++;
+ assets=await Promise.all(assets.map(async a=>a));
+ for(let i=0;i<assets.length;i++){const a=assets[i];assets[i]=(await call(`/api/jobs/${job.id}/assets`,'POST',{...a,version:2,briefRevision:2,naming:{...a.naming,version:2},revisionNote:'Updated for brief revision two'},'MAKER',201)).asset;}
+ await call(`/api/jobs/${job.id}/operations`,'PATCH',ops,'MAKER');
+ await db.user.updateMany({where:{id:{in:[primary.id,admin.id]}},data:{qaUnavailable:true}});
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Internal Review'},'MAKER',409);
+ await db.user.update({where:{id:admin.id},data:{qaUnavailable:false}});
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Internal Review'},'MAKER');
+ const handoff=await db.outboxEvent.findFirstOrThrow({where:{type:'review.internal.ready',payload:{path:['jobId'],equals:job.id}},orderBy:{createdAt:'desc'}});assert.deepEqual((handoff.payload as any).qaSlackIds,['UADMIN']);assertions++;
+ for(const a of assets)await call(`/api/jobs/${job.id}/assets`,'PATCH',{assetId:a.id,humanChecks:['brand'],evidenceUrl:'https://frame.io/new-review',copyVerified:true,note:'Re-reviewed after revision'},'QA');
+ await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Client Review'},'QA');
+ job=(await call(`/api/jobs/${job.id}/transitions`,'POST',{next:'Approved',approvalEvidenceUrl:'https://example.com/new-approval'},'ADMIN')).job;
+ let batch=(await call(`/api/delivery/${job.deliveryBatchId}`)).batch;assert.equal(batch.items.length,3);assertions++;
+ assert.equal(await db.outboxEvent.count({where:{type:'delivery.ready',payload:{path:['batchId'],equals:batch.id}}}),1);assertions++;
+ await call(`/api/delivery/${batch.id}/manifest`,'POST',{},'ADMIN',201);
+ assert.equal(await db.outboxEvent.count({where:{type:'delivery.ready',payload:{path:['batchId'],equals:batch.id}}}),1);assertions++;
+ await receipt(batch.id,{id:'transfer-failed',type:'delivery.failed',message:'Simulated provider timeout'});
+ assert.equal((await call(`/api/delivery/${batch.id}`)).batch.status,'FAILED');assertions++;
+ await call(`/api/delivery/${batch.id}/retry`,'POST',{},'ADMIN');
+ const events=batch.items.map((item:any,i:number)=>({id:`drive-${i}`,type:'drive.item_verified',itemId:item.id,driveFileId:`file-${i}`,finalName:item.finalName,bytes:100,driveFolderId:'test-job-folder'}));
+ await receipt(batch.id,{...events[0],finalName:'wrong.png'},409);
+ await receipt(batch.id,{id:'early-slack',type:'slack.dm_confirmed',receiptId:'test-ts',recipientSlackId:'UMEDIA_BUYER'},409);
+ await Promise.all(events.map((e:any)=>receipt(batch.id,e)));
+ assert.equal(await db.outboxEvent.count({where:{type:'delivery.drive_verified',payload:{path:['batchId'],equals:batch.id}}}),1);assertions++;
+ await receipt(batch.id,events[0]);
+ await receipt(batch.id,{...events[0],driveFileId:'replacement'},409);
+ await receipt(batch.id,{id:'wrong-slack',type:'slack.dm_confirmed',receiptId:'test-ts',recipientSlackId:'UOTHER'},409);
+ assert.equal((await call(`/api/jobs/${job.id}`)).job.status,'Approved');assertions++;
+ const completed=await receipt(batch.id,{id:'slack-ok',type:'slack.dm_confirmed',receiptId:'test-ts',recipientSlackId:'UMEDIA_BUYER'});assert.equal(completed.delivered,true);assertions++;
+ assert.equal((await call(`/api/jobs/${job.id}`)).job.status,'Delivered');assertions++;
+ await receipt(batch.id,{id:'slack-ok',type:'slack.dm_confirmed',receiptId:'test-ts',recipientSlackId:'UMEDIA_BUYER'});
+ const launch={jobId:job.id,variantCode:'A',platform:'Meta',account:'Test account',status:'Live',plannedAt:'',launchedAt:'2026-10-08',destinationUrl:'https://example.com/product',adUrl:'https://example.com/ad',campaign:'Test campaign',adSet:'Test set',notes:'Recorded test launch; no ad-platform call'};
+ await call('/api/operations/launches','POST',launch,'MEDIA_BUYER');
+ const metric={assetId:assets[0].id,externalId:`metric-${run}`,provider:'manual',account:'Test account',adId:'test-ad',sourceUrl:'https://example.com/report',periodStart:'2026-10-01',periodEnd:'2026-10-08',currency:'USD',spend:100,impressions:1000,clicks:20,conversions:null,revenue:null,conversionDefinition:'Purchases not available',learning:'Wait for conversion reporting'};
+ await call('/api/assurance/metrics','POST',metric,'MEDIA_BUYER');await call('/api/assurance/metrics','POST',metric,'MEDIA_BUYER');await call('/api/assurance/metrics','POST',{...metric,spend:200},'MEDIA_BUYER',409);
+ await call('/api/admin/readiness','GET',undefined,'MAKER',403);
+ await call('/api/admin/readiness');
+ const failed=await db.outboxEvent.create({data:{type:'test.retry',payload:{},attempts:10,lastError:'Test failure'}});
+ await call('/api/admin/retry','POST',{eventId:failed.id},'ADMIN');
+ assert.equal((await db.outboxEvent.findUniqueOrThrow({where:{id:failed.id}})).attempts,0);assertions++;
+ console.log(JSON.stringify({passed:true,assertions,jobNumber:job.number,variants:job.variants.length,externalCalls:'none; signed worker receipts simulated',database:'isolated PostgreSQL'},null,2));
+}finally{await db.$disconnect()}

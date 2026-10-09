@@ -20,7 +20,7 @@ export function routeQa(g:Governance,people:QaPerson[]){
  if(!g.routingConfirmed)return {person:null,reason:'QA routing awaits Senth confirmation'};
  const primary=people.find(p=>p.email.toLowerCase()===g.primaryQaEmail.toLowerCase());
  const backup=people.find(p=>p.email.toLowerCase()===g.backupQaEmail.toLowerCase());
- const eligible=(p:QaPerson|undefined)=>p&&!p.qaUnavailable&&p.slackUserId;
+ const eligible=(p:QaPerson|undefined)=>p&&['QA','ADMIN','STRATEGIST'].includes(p.role)&&!p.qaUnavailable&&p.slackUserId;
  if(eligible(primary))return {person:primary!,reason:'Primary reviewer'};
  if(eligible(backup))return {person:backup!,reason:'Backup reviewer'};
  return {person:null,reason:'Primary and backup are unavailable or missing Slack IDs'};

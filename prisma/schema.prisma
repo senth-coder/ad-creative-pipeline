@@ -118,6 +118,7 @@ model Job {
   approvedAt       DateTime?
   templateSnapshot Json?
   ruleSnapshot     Json?
+  briefRevision    Int             @default(1)
   brief            Json
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -159,6 +160,7 @@ model AssetVersion {
   review Json?
   createdAt DateTime @default(now())
   metrics PerformanceMetric[]
+  deliveryItems DeliveryItem[]
   variant         Variant @relation(fields: [variantId], references: [id])
   @@unique([variantId, version])
 }
@@ -169,6 +171,7 @@ model DeliveryBatch {
   status         DeliveryStatus @default(PENDING)
   driveFolderId  String?
   slackReceiptId String?
+  mediaBuyerSlackId String?
   error          String?
   createdAt      DateTime       @default(now())
   completedAt    DateTime?
@@ -181,6 +184,8 @@ model DeliveryItem {
   batchId       String
   variantCode   String
   version       Int
+  assetVersionId String?
+  assetVersion AssetVersion? @relation(fields:[assetVersionId],references:[id])
   sourceAssetId String
   finalName     String
   driveFileId   String?
@@ -234,6 +239,7 @@ model OutboxEvent {
   type        String
   payload     Json
   attempts    Int       @default(0)
+  lastError String?
   leaseToken String?
   leasedUntil DateTime?
   createdAt   DateTime  @default(now())

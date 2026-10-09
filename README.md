@@ -1,3 +1,7 @@
+# MVP release
+
+See [MVP setup and recovery](docs/MVP-RUNBOOK.md) for the current production checklist and version 2 delivery contract. Approval now queues delivery automatically; the worker requires exact filename, nonzero bytes and the intended Slack recipient. The public site remains a preview until database and Google OAuth setup are complete.
+
 # Ghost Growth Creative Operations
 
 Next.js app for the Ghost Growth brief → production → review → delivery workflow. The dashboard can run in **preview mode** with browser saved sample jobs or **server mode** with Google sign-in and PostgreSQL.
@@ -137,7 +141,7 @@ Apply `20261009_assurance` after earlier migrations, then deploy. Keep existing 
 | GET `/api/integrations/status-map` | Bearer-token authenticated stable status keys and current labels. Map keys to Notion option IDs, not names. |
 | POST `/api/integrations/outbox` | Claim up to 25 events for five minutes; returns `schemaVersion`, `leaseToken`, `idempotencyKey`. |
 | POST `/api/webhooks/make` | Signed success/failure receipt. Claimed work requires the matching unexpired lease token; success requires `receiptId`. |
-| POST `/api/delivery/:batchId/manifest` | `{ "assetIds": ["tracked-asset-id"] }`, exactly one current QA-reviewed revision per variant. |
+| POST `/api/delivery/:batchId/manifest` | Idempotent recovery endpoint; automatically selects the latest current QA-reviewed revision per variant. Normal approval queues this without a separate request. |
 
 The `delivery.ready` event's `items` now include the actual delivery item `id`, `assetVersionId`, generated `finalName`, `sourceUrl`, source asset ID, brief revision/reference and `versionFolder` (`v01`, etc.). **Update the Make manifest mapping before enabling new deliveries.** Historical manifests already queued retain their existing event payload.
 

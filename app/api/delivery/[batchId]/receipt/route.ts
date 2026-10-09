@@ -1,49 +1,35 @@
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
-import { db } from '@/lib/db';
-import { error } from '@/lib/api';
-import { verifySignature } from '@/lib/signature';
-
-const schema=z.discriminatedUnion('type',[
- z.object({id:z.string(),type:z.literal('drive.item_verified'),itemId:z.string(),driveFileId:z.string().min(1),checksum:z.string().optional(),driveFolderId:z.string().min(1)}),
- z.object({id:z.string(),type:z.literal('slack.dm_confirmed'),receiptId:z.string().min(1)})
-]);
+import {isDeepStrictEqual} from 'node:util';
+import {NextResponse} from 'next/server';
+import {db} from '@/lib/db';
+import {error} from '@/lib/api';
+import {verifySignature} from '@/lib/signature';
+import {deliveryReceiptSchema,receiptProblem,receiptKey,driveReady} from '@/lib/delivery';
+import {lockBatch} from '@/lib/delivery-server';
 export async function POST(request:Request,{params}:{params:Promise<{batchId:string}>}){
  const body=await request.text();if(!verifySignature(body,request.headers.get('x-integration-signature'),process.env.MAKE_WEBHOOK_SECRET))return error('Invalid signature',401);
- let json:unknown;try{json=JSON.parse(body)}catch{return error('Invalid JSON')};const parsed=schema.safeParse(json);if(!parsed.success)return error('Invalid receipt');
+ let json:unknown;try{json=JSON.parse(body)}catch{return error('Invalid JSON')};const parsed=deliveryReceiptSchema.safeParse(json);if(!parsed.success)return error('Invalid receipt: filename, positive file size and intended Slack recipient are required');
  const {batchId}=await params;const event=parsed.data;
- try{
-  const result=await db.$transaction(async tx=>{
-   const prior=await tx.inboundEvent.findUnique({where:{externalId:`delivery:${event.id}`}});if(prior)return {duplicate:true,delivered:false};
-   const batch=await tx.deliveryBatch.findUnique({where:{id:batchId},include:{items:true,job:{include:{client:true}}}});if(!batch||batch.job.status!=='APPROVED')throw new Error('Approved batch not found');
-   if(event.type==='drive.item_verified'){
-   const item=batch.items.find(i=>i.id===event.itemId);if(!item)throw new Error('Item not in batch');
-    if(batch.driveFolderId&&batch.driveFolderId!==event.driveFolderId)throw new Error('Drive folder mismatch');
-    await tx.deliveryItem.update({where:{id:item.id},data:{driveFileId:event.driveFileId,checksum:event.checksum,status:'DRIVE_VERIFIED'}});
-    await tx.deliveryBatch.update({where:{id:batchId},data:{driveFolderId:event.driveFolderId}});
-   }else {
-    if(!batch.driveFolderId||!batch.items.length||!batch.items.every(i=>i.driveFileId&&i.status==='DRIVE_VERIFIED'))throw new Error('Verify all Drive assets before confirming the Slack handoff');
-    await tx.deliveryBatch.update({where:{id:batchId},data:{slackReceiptId:event.receiptId}});
-   }
-   await tx.inboundEvent.create({data:{provider:'delivery',externalId:`delivery:${event.id}`,payload:json as object,processedAt:new Date()}});
-   const refreshed=await tx.deliveryBatch.findUniqueOrThrow({where:{id:batchId},include:{items:true}});
-   const driveReady=refreshed.items.length>0&&refreshed.items.every(i=>i.driveFileId&&i.status==='DRIVE_VERIFIED')&&Boolean(refreshed.driveFolderId);
-   const wasDriveReady=batch.items.length>0&&batch.items.every(i=>i.driveFileId&&i.status==='DRIVE_VERIFIED');
-   if(driveReady&&!wasDriveReady&&event.type==='drive.item_verified'){
-    const buyer=batch.job.client.mediaBuyerId?await tx.user.findUnique({where:{id:batch.job.client.mediaBuyerId}}):null;
-    if(!buyer?.slackUserId)throw new Error('Media buyer Slack mapping missing');
-    await tx.outboxEvent.create({data:{type:'delivery.drive_verified',payload:{batchId,jobId:batch.jobId,driveFolderId:refreshed.driveFolderId,driveUrl:`https://drive.google.com/drive/folders/${refreshed.driveFolderId}`,mediaBuyerSlackId:buyer.slackUserId}}});
-   }
-   const complete=driveReady&&Boolean(refreshed.slackReceiptId);
-   if(complete){
-    const moved=await tx.job.updateMany({where:{id:batch.jobId,status:'APPROVED'},data:{status:'DELIVERED'}});
-    if(moved.count!==1)throw new Error('Job was already delivered');
-    await tx.deliveryBatch.update({where:{id:batchId},data:{status:'COMPLETE',completedAt:new Date()}});
-    await tx.auditEvent.create({data:{jobId:batch.jobId,action:'job.delivered',after:{batchId,driveFolderId:refreshed.driveFolderId,slackReceiptId:refreshed.slackReceiptId}}});
-    await tx.outboxEvent.create({data:{type:'job.delivered',payload:{jobId:batch.jobId,batchId}}});
-   }
-   return {duplicate:false,delivered:complete};
-  });
-  return NextResponse.json(result);
- }catch(e){return error((e as Error).message,409)}
+ try{return NextResponse.json(await db.$transaction(async tx=>{
+  await lockBatch(tx,batchId);
+  const batch=await tx.deliveryBatch.findUnique({where:{id:batchId},include:{items:true,job:true}});if(!batch)throw new Error('Batch not found');
+  const key=receiptKey(batchId,event.id);const prior=await tx.inboundEvent.findUnique({where:{externalId:key}});
+  if(prior){if(!isDeepStrictEqual(prior.payload,json))throw new Error('Receipt ID was reused with different contents');return {duplicate:true,delivered:batch.status==='COMPLETE'};}
+  if(batch.status==='COMPLETE')return {duplicate:true,delivered:true};
+  if(batch.job.status!=='APPROVED')throw new Error('Job is not approved');
+  const problem=receiptProblem(event,batch);if(problem)throw new Error(problem);
+  if(event.type==='delivery.failed')await tx.deliveryBatch.update({where:{id:batchId},data:{status:'FAILED',error:event.message}});
+  else if(event.type==='drive.item_verified'){
+   await tx.deliveryItem.update({where:{id:event.itemId},data:{driveFileId:event.driveFileId,checksum:event.checksum,status:'DRIVE_VERIFIED'}});
+   await tx.deliveryBatch.update({where:{id:batchId},data:{driveFolderId:event.driveFolderId,error:null}});
+  }else await tx.deliveryBatch.update({where:{id:batchId},data:{slackReceiptId:event.receiptId,error:null}});
+  await tx.inboundEvent.create({data:{provider:'delivery',externalId:key,payload:json as object,processedAt:new Date()}});
+  const refreshed=await tx.deliveryBatch.findUniqueOrThrow({where:{id:batchId},include:{items:true}});
+  if(driveReady(refreshed)&&!driveReady(batch)&&event.type==='drive.item_verified'){
+   await tx.deliveryBatch.update({where:{id:batchId},data:{status:'DRIVE_VERIFIED'}});
+   await tx.outboxEvent.create({data:{type:'delivery.drive_verified',payload:{schemaVersion:2,batchId,jobId:batch.jobId,driveFolderId:refreshed.driveFolderId,driveUrl:`https://drive.google.com/drive/folders/${refreshed.driveFolderId}`,mediaBuyerSlackId:batch.mediaBuyerSlackId}}});
+  }
+  const complete=driveReady(refreshed)&&Boolean(refreshed.slackReceiptId);
+  if(complete){await tx.job.update({where:{id:batch.jobId},data:{status:'DELIVERED'}});await tx.deliveryBatch.update({where:{id:batchId},data:{status:'COMPLETE',error:null,completedAt:new Date()}});await tx.auditEvent.create({data:{jobId:batch.jobId,action:'job.delivered',after:{batchId,driveFolderId:refreshed.driveFolderId,slackReceiptId:refreshed.slackReceiptId}}});await tx.outboxEvent.create({data:{type:'job.delivered',payload:{jobId:batch.jobId,batchId}}});}
+  return {duplicate:false,delivered:complete};
+ }));}catch(e){return error((e as Error).message,409)}
 }
