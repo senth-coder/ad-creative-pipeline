@@ -1,3 +1,4 @@
+import {wakeWorker} from '@/lib/worker-wake';
 import {Prisma} from '@prisma/client';
 import {sharedFields,typeFields,requiredBriefProblem,type BriefField} from '@/lib/templates';
 import {operationsFor} from '@/lib/operations';
@@ -38,6 +39,6 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
    if(assignee!==undefined&&assignee?.id!==existing.assigneeId)await tx.outboxEvent.create({data:{type:'job.assigned',payload:{jobId:id,assigneeId:assignee?.id||null,assigneeSlackId:assignee?.slackUserId||null}}});
    return job;
  });
- return NextResponse.json({job:serializeJob(updated)});
+ wakeWorker();return NextResponse.json({job:serializeJob(updated)});
  }catch(e){return error((e as Error).message,409)}
 }

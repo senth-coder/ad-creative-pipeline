@@ -1,3 +1,4 @@
+import {wakeWorker} from '@/lib/worker-wake';
 import {isDeepStrictEqual} from 'node:util';
 import {NextResponse} from 'next/server';
 import {db} from '@/lib/db';
@@ -9,7 +10,7 @@ import {recordDeliveryReceipt} from '@/lib/receipt-server';
 export async function POST(request:Request){
  if(!integrationAuthorized(request))return error('Not authorized',401);
  const parsed=workerResultSchema.safeParse(await jsonBody(request));if(!parsed.success)return error('Invalid worker result');const input=parsed.data;
- try{return NextResponse.json(await db.$transaction(async tx=>{
+ try{const result=await db.$transaction(async tx=>{
   await tx.$queryRaw`SELECT id FROM "OutboxEvent" WHERE id=${input.eventId} FOR UPDATE`;
   const event=await tx.outboxEvent.findUniqueOrThrow({where:{id:input.eventId}}),key=`worker:${input.actionId}`;
   const previous=await tx.inboundEvent.findUnique({where:{externalId:key}});
@@ -33,5 +34,5 @@ export async function POST(request:Request){
   await tx.outboxEvent.update({where:{id:event.id},data:{payload:{...payload,worker:state} as object,deliveredAt:done?new Date():null,leaseToken:null,leasedUntil:null,lastError:null,attempts:0}});
   await tx.inboundEvent.create({data:{provider:'make',externalId:key,payload:input,processedAt:new Date()}});
   return {accepted:true,complete:done};
- }));}catch(e){return error((e as Error).message,409)}
+ });wakeWorker();return NextResponse.json(result);}catch(e){return error((e as Error).message,409)}
 }

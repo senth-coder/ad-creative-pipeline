@@ -1,3 +1,4 @@
+import {wakeWorker} from '@/lib/worker-wake';
 import {lockClient} from '@/lib/locking';
 import { Prisma } from '@prisma/client';
 import { NextResponse } from 'next/server';
@@ -58,6 +59,6 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
    if(next==='Approved'){const batch=await tx.deliveryBatch.create({data:{jobId:id}});await queueDelivery(tx,batch.id,user.id);}
    return tx.job.findUniqueOrThrow({where:{id},include:jobInclude});
   });
-  return NextResponse.json({job:serializeJob(updated)});
+  wakeWorker();return NextResponse.json({job:serializeJob(updated)});
  } catch(e) {return error((e as Error).message,409)}
 }

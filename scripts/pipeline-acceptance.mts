@@ -95,6 +95,8 @@ try{
  await call('/api/assurance/metrics','POST',metric,'MEDIA_BUYER');await call('/api/assurance/metrics','POST',metric,'MEDIA_BUYER');await call('/api/assurance/metrics','POST',{...metric,spend:200},'MEDIA_BUYER',409);
  await call('/api/admin/readiness','GET',undefined,'MAKER',403);
  await call('/api/admin/readiness');
+ await call('/api/admin/worker','POST',{},'MAKER',403);
+ await call('/api/admin/worker','POST',{},'ADMIN',409);
  const failed=await db.outboxEvent.create({data:{type:'test.retry',payload:{},attempts:10,lastError:'Test failure'}});
  await call('/api/admin/retry','POST',{eventId:failed.id},'ADMIN');
  assert.equal((await db.outboxEvent.findUniqueOrThrow({where:{id:failed.id}})).attempts,0);assertions++;

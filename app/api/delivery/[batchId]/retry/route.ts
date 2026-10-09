@@ -1,3 +1,4 @@
+import {wakeWorker} from '@/lib/worker-wake';
 import {NextResponse} from 'next/server';
 import {db} from '@/lib/db';
 import {currentUser,mayCreate} from '@/lib/permissions';
@@ -17,5 +18,5 @@ export async function POST(_request:Request,{params}:{params:Promise<{batchId:st
  const changed=await tx.outboxEvent.updateMany({where:{id:event.id,OR:[{leasedUntil:null},{leasedUntil:{lt:new Date()}}]},data:{deliveredAt:null,attempts:0,leaseToken:null,leasedUntil:null,lastError:null}});if(!changed.count)throw new Error('Worker is still processing this delivery. Retry after its lease expires.');
  await tx.deliveryBatch.update({where:{id:batchId},data:{status:driveReady(batch)?'DRIVE_VERIFIED':'TRANSFERRING',error:null}});
  await tx.auditEvent.create({data:{jobId:batch.jobId,actorId:user.id,action:'delivery.retry_requested',after:{batchId,eventId:event.id}}});return {queued:true};
- });return NextResponse.json(result);}catch(e){return error((e as Error).message,409)}
+ });wakeWorker();return NextResponse.json(result);}catch(e){return error((e as Error).message,409)}
 }

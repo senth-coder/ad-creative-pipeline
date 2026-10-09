@@ -1,6 +1,22 @@
 {
-  "name": "Creative OS \u2014 delivery and DM worker",
+  "name": "Creative OS — delivery and DM worker",
   "flow": [
+    {
+      "id": 9,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": 0,
+        "maxResults": 1
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": {
+          "x": 0,
+          "y": 0
+        }
+      }
+    },
     {
       "id": 1,
       "module": "http:MakeRequest",
@@ -58,8 +74,8 @@
               },
               "metadata": {
                 "designer": {
-                  "x": 520,
-                  "y": -250
+                  "x": 780,
+                  "y": -240
                 }
               },
               "filter": {
@@ -94,7 +110,7 @@
                 ],
                 "contentType": "json",
                 "inputMethod": "jsonString",
-                "jsonStringBodyContent": "{\"eventId\":\"{{1.data.eventId}}\",\"leaseToken\":\"{{1.data.leaseToken}}\",\"actionId\":\"{{1.data.action.id}}\",\"result\":{{toJSON(3)}}}",
+                "jsonStringBodyContent": "{\"eventId\":\"{{1.data.eventId}}\",\"leaseToken\":\"{{1.data.leaseToken}}\",\"actionId\":\"{{1.data.action.id}}\",\"result\":{\"id\":\"{{3.id}}\",\"name\":\"{{3.name}}\",\"mimeType\":\"{{3.mimeType}}\",\"parents\":[\"{{get(3.parents; 1)}}\"]}}",
                 "parseResponse": true,
                 "stopOnHttpError": true,
                 "timeout": "40",
@@ -105,7 +121,7 @@
               "metadata": {
                 "designer": {
                   "x": 1040,
-                  "y": 0
+                  "y": -240
                 }
               }
             }
@@ -128,7 +144,7 @@
               },
               "metadata": {
                 "designer": {
-                  "x": 520,
+                  "x": 780,
                   "y": 0
                 }
               },
@@ -164,7 +180,7 @@
                 ],
                 "contentType": "json",
                 "inputMethod": "jsonString",
-                "jsonStringBodyContent": "{\"eventId\":\"{{1.data.eventId}}\",\"leaseToken\":\"{{1.data.leaseToken}}\",\"actionId\":\"{{1.data.action.id}}\",\"result\":{{toJSON(5)}}}",
+                "jsonStringBodyContent": "{\"eventId\":\"{{1.data.eventId}}\",\"leaseToken\":\"{{1.data.leaseToken}}\",\"actionId\":\"{{1.data.action.id}}\",\"result\":{\"id\":\"{{5.id}}\",\"name\":\"{{5.name}}\",\"mimeType\":\"{{5.mimeType}}\",\"parents\":[\"{{get(5.parents; 1)}}\"],\"size\":\"{{5.size}}\",\"md5Checksum\":\"{{5.md5Checksum}}\"}}",
                 "parseResponse": true,
                 "stopOnHttpError": true,
                 "timeout": "40",
@@ -174,7 +190,7 @@
               },
               "metadata": {
                 "designer": {
-                  "x": 1560,
+                  "x": 1040,
                   "y": 0
                 }
               }
@@ -198,8 +214,8 @@
               },
               "metadata": {
                 "designer": {
-                  "x": 520,
-                  "y": 250
+                  "x": 780,
+                  "y": 240
                 }
               },
               "filter": {
@@ -234,7 +250,7 @@
                 ],
                 "contentType": "json",
                 "inputMethod": "jsonString",
-                "jsonStringBodyContent": "{\"eventId\":\"{{1.data.eventId}}\",\"leaseToken\":\"{{1.data.leaseToken}}\",\"actionId\":\"{{1.data.action.id}}\",\"result\":{{toJSON(7)}}}",
+                "jsonStringBodyContent": "{\"eventId\":\"{{1.data.eventId}}\",\"leaseToken\":\"{{1.data.leaseToken}}\",\"actionId\":\"{{1.data.action.id}}\",\"result\":{\"channel\":\"{{7.channel}}\",\"ts\":\"{{7.ts}}\"}}",
                 "parseResponse": true,
                 "stopOnHttpError": true,
                 "timeout": "40",
@@ -244,8 +260,8 @@
               },
               "metadata": {
                 "designer": {
-                  "x": 2080,
-                  "y": 0
+                  "x": 1040,
+                  "y": 240
                 }
               }
             }
@@ -254,7 +270,7 @@
       ],
       "metadata": {
         "designer": {
-          "x": 260,
+          "x": 520,
           "y": 0
         }
       }
@@ -274,6 +290,7 @@
     },
     "designer": {
       "orphans": []
-    }
+    },
+    "instant": true
   }
 }

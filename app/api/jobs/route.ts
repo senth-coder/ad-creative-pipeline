@@ -1,3 +1,4 @@
+import {wakeWorker} from '@/lib/worker-wake';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/lib/db';
@@ -48,6 +49,6 @@ export async function POST(request:Request) {
    await tx.outboxEvent.create({data:{type:'job.created',payload:{jobId:job.id,jobNumber:job.number,clientId:client.id,assigneeSlackId:assignee?.slackUserId||null}}});
    return job;
  });
- return NextResponse.json({job:serializeJob(created)},{status:201});
+ wakeWorker();return NextResponse.json({job:serializeJob(created)},{status:201});
  }catch(e){return error((e as Error).message,409)}
 }

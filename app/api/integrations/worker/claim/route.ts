@@ -1,3 +1,4 @@
+import {wakeWorker} from '@/lib/worker-wake';
 import {randomUUID} from 'node:crypto';
 import {NextResponse} from 'next/server';
 import {db} from '@/lib/db';
@@ -19,5 +20,5 @@ export async function POST(request:Request){
    await tx.outboxEvent.update({where:{id:event.id},data:{payload:{...payload,worker:{...state,pending:action}} as object,leaseToken,leasedUntil,attempts:{increment:1},lastError:'WORKER_PENDING: Awaiting provider result. If overdue, reconcile in Make before retrying.'}});
    return {eventId:event.id,leaseToken,action};
   }catch(e){await tx.outboxEvent.update({where:{id:event.id},data:{lastError:(e as Error).message,attempts:10}});return {action:null,blockedEventId:event.id,message:(e as Error).message};}
- });return NextResponse.json(result);
+ });if(!result.action)wakeWorker();return NextResponse.json(result);
 }

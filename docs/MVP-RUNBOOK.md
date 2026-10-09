@@ -46,7 +46,7 @@ In Settings add or update team members with roles and Slack user IDs. Configure 
 
 ### 4. Make worker — staged Drive delivery
 
-The executable scenario template is `integrations/make-worker.blueprint.json`. It calls `POST /api/integrations/worker/claim`, performs one provider action, then calls `POST /api/integrations/worker/complete`. Both endpoints require the production integration bearer token. The checked-in blueprint contains a token placeholder and connection IDs of zero; select the authorised Drive and Slack connections after importing it. configure credentials privately in Make, preferably with an HTTP API-key connection. Keep execution data confidential. Never publish a scenario export containing credentials.
+The executable scenario template is `integrations/make-worker.blueprint.json`. Its private custom webhook starts `POST /api/integrations/worker/claim`, performs one provider action, then calls `POST /api/integrations/worker/complete`. Both application endpoints require the production integration bearer token. The checked-in blueprint contains a token placeholder and connection/hook IDs of zero; select the authorised Drive and Slack connections and create a private custom webhook after importing it. Configure credentials privately in Make, preferably with an HTTP API-key connection. Keep execution data confidential. Never publish a scenario export containing credentials or the private webhook URL.
 
 The worker creates the job and version folders, copies the approved binary export under its exact filename, validates Drive's returned ID, name, parent, size and checksum, then sends the pinned buyer DM. Each verified action is recorded before the next one can be claimed. The app marks Delivered only after the last file and the buyer DM have been confirmed.
 
@@ -56,7 +56,11 @@ The worker creates the job and version folders, copies the approved binary expor
 
 **Notifications:** created/assigned jobs notify the maker; internal review notifies the confirmed available QA owner; revisions notify the maker; client review resolves the registered approver email; blockers resolve a registered owner email. Missing mappings stop visibly. Status-only transitions, job approval, and delivered audit events do not create duplicate DMs. The verified-delivery event is the buyer's notification.
 
-One action runs per scheduled execution. Use a supported cadence for your Make plan and account for queue depth; on-demand execution is suitable for acceptance. Existing Notion/Tally scenarios remain separate until cutover.
+Set `MAKE_WORKER_WAKE_URL` as a sensitive Production environment variable in Vercel and redeploy. Use Make's immediate webhook schedule with sequential processing. The app sends only a wake-up signal after committed mutations; Make must independently authenticate and claim its work. Each callback wakes the next eligible event. Audit-only events are consumed without sending extra messages. No wake-up is sent for an empty queue or unresolved provider actions, avoiding idle polling and repeated side effects.
+
+Settings → Workspace readiness shows the latest wake-up outcome and provides **Start pending work** for administrators and strategists. This restarts eligible queued work after an outage; it cannot replay held provider actions. If a signal fails, queued records remain durable and the failure appears in the audit trail. Existing Notion/Tally scenarios remain separate until cutover.
+
+October 9 provider acceptance: one clearly labelled synthetic Drive export was copied into its job/version folder with the exact generated name, verified against Drive metadata, and handed to the authorised test recipient through a real Make Slack DM. The app automatically reached Delivered. The initial folder callback failed due to a Make expression error; the original folder was reconciled without creating a duplicate, and the blueprint was corrected to explicit provider-field mappings. This was a seeded approved delivery fixture, not evidence that a real client completed QA or approval. Direct Figma/Frame.io export acceptance remains outstanding.
 
 ### Legacy signed receipt contract (version 2)
 
