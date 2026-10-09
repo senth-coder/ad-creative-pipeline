@@ -1,0 +1,279 @@
+{
+  "name": "Creative OS \u2014 delivery and DM worker",
+  "flow": [
+    {
+      "id": 1,
+      "module": "http:MakeRequest",
+      "version": 4,
+      "parameters": {
+        "authenticationType": "noAuth",
+        "tlsType": ""
+      },
+      "mapper": {
+        "url": "https://ad-creative-pipeline-nine.vercel.app/api/integrations/worker/claim",
+        "method": "post",
+        "headers": [
+          {
+            "name": "Authorization",
+            "value": "Bearer __CREATIVE_OS_INTEGRATION_TOKEN__"
+          }
+        ],
+        "contentType": "json",
+        "inputMethod": "jsonString",
+        "jsonStringBodyContent": "{}",
+        "parseResponse": true,
+        "stopOnHttpError": true,
+        "timeout": "40",
+        "allowRedirects": false,
+        "shareCookies": false,
+        "requestCompressedContent": true
+      },
+      "metadata": {
+        "designer": {
+          "x": 260,
+          "y": 0
+        }
+      }
+    },
+    {
+      "id": 2,
+      "module": "builtin:BasicRouter",
+      "version": 1,
+      "mapper": null,
+      "routes": [
+        {
+          "flow": [
+            {
+              "id": 3,
+              "module": "google-drive:createAFolder",
+              "version": 4,
+              "parameters": {
+                "__IMTCONN__": 0
+              },
+              "mapper": {
+                "destination": "drive",
+                "folderId": "{{1.data.action.parentId}}",
+                "name": "{{1.data.action.name}}",
+                "shared": false
+              },
+              "metadata": {
+                "designer": {
+                  "x": 520,
+                  "y": -250
+                }
+              },
+              "filter": {
+                "name": "folder",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{1.data.action.kind}}",
+                      "o": "text:equal",
+                      "b": "folder"
+                    }
+                  ]
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "module": "http:MakeRequest",
+              "version": 4,
+              "parameters": {
+                "authenticationType": "noAuth",
+                "tlsType": ""
+              },
+              "mapper": {
+                "url": "https://ad-creative-pipeline-nine.vercel.app/api/integrations/worker/complete",
+                "method": "post",
+                "headers": [
+                  {
+                    "name": "Authorization",
+                    "value": "Bearer __CREATIVE_OS_INTEGRATION_TOKEN__"
+                  }
+                ],
+                "contentType": "json",
+                "inputMethod": "jsonString",
+                "jsonStringBodyContent": "{\"eventId\":\"{{1.data.eventId}}\",\"leaseToken\":\"{{1.data.leaseToken}}\",\"actionId\":\"{{1.data.action.id}}\",\"result\":{{toJSON(3)}}}",
+                "parseResponse": true,
+                "stopOnHttpError": true,
+                "timeout": "40",
+                "allowRedirects": false,
+                "shareCookies": false,
+                "requestCompressedContent": true
+              },
+              "metadata": {
+                "designer": {
+                  "x": 1040,
+                  "y": 0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "flow": [
+            {
+              "id": 5,
+              "module": "google-drive:copyAFile",
+              "version": 4,
+              "parameters": {
+                "__IMTCONN__": 0
+              },
+              "mapper": {
+                "select": "map",
+                "file": "{{1.data.action.sourceId}}",
+                "folderId": "{{1.data.action.parentId}}",
+                "name": "{{1.data.action.name}}"
+              },
+              "metadata": {
+                "designer": {
+                  "x": 520,
+                  "y": 0
+                }
+              },
+              "filter": {
+                "name": "copy",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{1.data.action.kind}}",
+                      "o": "text:equal",
+                      "b": "copy"
+                    }
+                  ]
+                ]
+              }
+            },
+            {
+              "id": 6,
+              "module": "http:MakeRequest",
+              "version": 4,
+              "parameters": {
+                "authenticationType": "noAuth",
+                "tlsType": ""
+              },
+              "mapper": {
+                "url": "https://ad-creative-pipeline-nine.vercel.app/api/integrations/worker/complete",
+                "method": "post",
+                "headers": [
+                  {
+                    "name": "Authorization",
+                    "value": "Bearer __CREATIVE_OS_INTEGRATION_TOKEN__"
+                  }
+                ],
+                "contentType": "json",
+                "inputMethod": "jsonString",
+                "jsonStringBodyContent": "{\"eventId\":\"{{1.data.eventId}}\",\"leaseToken\":\"{{1.data.leaseToken}}\",\"actionId\":\"{{1.data.action.id}}\",\"result\":{{toJSON(5)}}}",
+                "parseResponse": true,
+                "stopOnHttpError": true,
+                "timeout": "40",
+                "allowRedirects": false,
+                "shareCookies": false,
+                "requestCompressedContent": true
+              },
+              "metadata": {
+                "designer": {
+                  "x": 1560,
+                  "y": 0
+                }
+              }
+            }
+          ]
+        },
+        {
+          "flow": [
+            {
+              "id": 7,
+              "module": "slack:CreateMessage",
+              "version": 4,
+              "parameters": {
+                "__IMTCONN__": 0
+              },
+              "mapper": {
+                "channel": "{{1.data.action.recipient}}",
+                "channelWType": "manualy",
+                "mrkdwn": true,
+                "text": "{{1.data.action.text}}"
+              },
+              "metadata": {
+                "designer": {
+                  "x": 520,
+                  "y": 250
+                }
+              },
+              "filter": {
+                "name": "slack",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{1.data.action.kind}}",
+                      "o": "text:equal",
+                      "b": "slack"
+                    }
+                  ]
+                ]
+              }
+            },
+            {
+              "id": 8,
+              "module": "http:MakeRequest",
+              "version": 4,
+              "parameters": {
+                "authenticationType": "noAuth",
+                "tlsType": ""
+              },
+              "mapper": {
+                "url": "https://ad-creative-pipeline-nine.vercel.app/api/integrations/worker/complete",
+                "method": "post",
+                "headers": [
+                  {
+                    "name": "Authorization",
+                    "value": "Bearer __CREATIVE_OS_INTEGRATION_TOKEN__"
+                  }
+                ],
+                "contentType": "json",
+                "inputMethod": "jsonString",
+                "jsonStringBodyContent": "{\"eventId\":\"{{1.data.eventId}}\",\"leaseToken\":\"{{1.data.leaseToken}}\",\"actionId\":\"{{1.data.action.id}}\",\"result\":{{toJSON(7)}}}",
+                "parseResponse": true,
+                "stopOnHttpError": true,
+                "timeout": "40",
+                "allowRedirects": false,
+                "shareCookies": false,
+                "requestCompressedContent": true
+              },
+              "metadata": {
+                "designer": {
+                  "x": 2080,
+                  "y": 0
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "designer": {
+          "x": 260,
+          "y": 0
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true,
+      "sequential": true,
+      "confidential": true,
+      "dataloss": false,
+      "dlq": true
+    },
+    "designer": {
+      "orphans": []
+    }
+  }
+}

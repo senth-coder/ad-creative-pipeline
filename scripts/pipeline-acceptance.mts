@@ -98,5 +98,36 @@ try{
  const failed=await db.outboxEvent.create({data:{type:'test.retry',payload:{},attempts:10,lastError:'Test failure'}});
  await call('/api/admin/retry','POST',{eventId:failed.id},'ADMIN');
  assert.equal((await db.outboxEvent.findUniqueOrThrow({where:{id:failed.id}})).attempts,0);assertions++;
+ // Exercise the actual staged worker routes with provider results simulated locally.
+ await db.outboxEvent.updateMany({where:{deliveredAt:null},data:{deliveredAt:new Date()}});
+ const wjob=await db.job.create({data:{clientId:client.id,campaignId:job.campaignId||((await db.job.findUniqueOrThrow({where:{id:job.id}})).campaignId),title:'Worker acceptance',type:'Static',status:'APPROVED',dueAt:new Date(),brief:{}}});
+ const wb=await db.deliveryBatch.create({data:{jobId:wjob.id,status:'TRANSFERRING',mediaBuyerSlackId:'UBUYER'}});
+ const wi=await db.deliveryItem.create({data:{batchId:wb.id,variantCode:'A',version:1,sourceAssetId:'source123456',finalName:'TEST_STATIC_worker_1x1_v01.png'}});
+ const we=await db.outboxEvent.create({data:{type:'delivery.ready',payload:{batchId:wb.id,jobId:wjob.id,driveRootId:'root-folder',jobFolder:`Job-${wjob.number}`,items:[{id:wi.id,sourceUrl:'https://drive.google.com/file/d/source123456/view',sourceAssetId:'source123456',finalName:wi.finalName,versionFolder:'v01'}]}}});
+ async function worker(path:string,data:unknown={},expected=200,authorized=true){const r=await fetch(base+'/api/integrations/worker/'+path,{method:'POST',headers:{'Content-Type':'application/json',Authorization:authorized?`Bearer ${process.env.INTEGRATION_TOKEN}`:'Bearer wrong'},body:JSON.stringify(data)});const d=await r.json();assert.equal(r.status,expected,JSON.stringify(d));assertions++;return d;}
+ await worker('claim',{},401,false);
+ const claims=await Promise.all([worker('claim'),worker('claim')]);assert.equal(claims.filter(c=>c.action).length,1);assertions++;
+ let claim=claims.find(c=>c.action);assert.equal(claim.eventId,we.id);assertions++;
+ const evidence=(result:unknown)=>({eventId:claim.eventId,leaseToken:claim.leaseToken,actionId:claim.action.id,result});
+ await worker('complete',evidence({id:'folder',name:'wrong',parents:['root-folder'],mimeType:'application/vnd.google-apps.folder'}),409);
+ await db.outboxEvent.update({where:{id:we.id},data:{leasedUntil:new Date(Date.now()-1000)}});
+ assert.equal((await worker('claim')).action,null);assertions++;
+ await call('/api/admin/retry','POST',{eventId:we.id},'ADMIN',409);
+ const generic=await fetch(base+'/api/integrations/outbox',{method:'POST',headers:{Authorization:`Bearer ${process.env.INTEGRATION_TOKEN}`}});assert.equal((await generic.json()).events.length,0);assertions++;
+ const folderProof=evidence({id:'folder',name:claim.action.name,parents:['root-folder'],mimeType:'application/vnd.google-apps.folder'});
+ await worker('complete',folderProof);await worker('complete',folderProof);
+ await worker('complete',{...folderProof,result:{...folderProof.result as object,id:'different'}},409);
+ claim=await worker('claim');assert.equal(claim.action.name,'v01');assertions++;
+ await worker('complete',evidence({id:'version-folder',name:'v01',parents:['folder'],mimeType:'application/vnd.google-apps.folder'}));
+ claim=await worker('claim');assert.equal(claim.action.kind,'copy');assertions++;
+ await worker('complete',evidence({id:'file',name:wi.finalName,parents:['wrong-folder'],size:100,md5Checksum:'test',mimeType:'image/png'}),409);
+ await worker('complete',evidence({id:'file',name:wi.finalName,parents:['version-folder'],size:100,md5Checksum:'test',mimeType:'image/png'}));
+ assert.equal((await db.job.findUniqueOrThrow({where:{id:wjob.id}})).status,'APPROVED');assertions++;
+ claim=await worker('claim');assert.equal(claim.action.recipient,'UBUYER');assertions++;
+ await worker('complete',evidence({channel:'C123',ts:'123.456'}),409);
+ await worker('complete',evidence({channel:'D123',ts:'123.456'}));
+ assert.equal((await db.job.findUniqueOrThrow({where:{id:wjob.id}})).status,'DELIVERED');assertions++;
+ await call('/api/assurance/clients','POST',{clientId:client.id,expectedVersion:1,governance:{...g,routingConfirmed:false}},'ADMIN');
+ assert.equal(await db.clientQa.count({where:{clientId:client.id}}),0);assertions++;
  console.log(JSON.stringify({passed:true,assertions,jobNumber:job.number,variants:job.variants.length,externalCalls:'none; signed worker receipts simulated',database:'isolated PostgreSQL'},null,2));
 }finally{await db.$disconnect()}

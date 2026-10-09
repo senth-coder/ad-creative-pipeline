@@ -13,6 +13,7 @@ export async function POST(_request:Request,{params}:{params:Promise<{batchId:st
  if(batch.job.status!=='APPROVED'||batch.status==='COMPLETE')throw new Error('Only pending approved deliveries can be retried');
  const type=driveReady(batch)?'delivery.drive_verified':'delivery.ready';
  const event=await tx.outboxEvent.findFirst({where:{type,payload:{path:['batchId'],equals:batchId}},orderBy:{createdAt:'desc'}});if(!event)throw new Error('Original delivery event not found');
+ if(event.lastError?.startsWith('WORKER_PENDING:'))throw new Error('Provider outcome is uncertain. Resume the saved Make completion step before retrying delivery.');
  const changed=await tx.outboxEvent.updateMany({where:{id:event.id,OR:[{leasedUntil:null},{leasedUntil:{lt:new Date()}}]},data:{deliveredAt:null,attempts:0,leaseToken:null,leasedUntil:null,lastError:null}});if(!changed.count)throw new Error('Worker is still processing this delivery. Retry after its lease expires.');
  await tx.deliveryBatch.update({where:{id:batchId},data:{status:driveReady(batch)?'DRIVE_VERIFIED':'TRANSFERRING',error:null}});
  await tx.auditEvent.create({data:{jobId:batch.jobId,actorId:user.id,action:'delivery.retry_requested',after:{batchId,eventId:event.id}}});return {queued:true};

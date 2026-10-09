@@ -17,6 +17,7 @@ export async function POST(request:Request){
  const policyChanged=JSON.stringify(previous.rules)!==JSON.stringify(g.rules)||previous.rulesConfirmed!==g.rulesConfirmed||previous.guidelinesUrl!==g.guidelinesUrl||previous.publisher!==g.publisher;
  try{await db.$transaction(async tx=>{
  const updated=await tx.client.updateMany({where:{id:clientId,governanceVersion:expectedVersion},data:{governance:g,governanceVersion:{increment:1},confirmedBy:g.routingConfirmed?(changedRoute?user.email:client.confirmedBy):null}});if(updated.count!==1)throw new Error('Client rules changed. Refresh and try again.');
+ await tx.clientQa.deleteMany({where:{clientId}});
  if(g.routingConfirmed){for(const reviewer of reviewers)await tx.clientQa.upsert({where:{clientId_userId:{clientId,userId:reviewer.id}},create:{clientId,userId:reviewer.id},update:{}});}
  await tx.auditEvent.create({data:{actorId:user.id,action:'client.governance.updated',after:{clientId,version:expectedVersion+1,policyChanged,routingConfirmed:g.routingConfirmed}}});
  });return NextResponse.json({saved:true,version:expectedVersion+1});}catch(e){return error((e as Error).message,409)}

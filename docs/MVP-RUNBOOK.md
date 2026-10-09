@@ -44,7 +44,21 @@ Only after the database, migrations, bootstrap and OAuth configuration are ready
 
 In Settings add or update team members with roles and Slack user IDs. Configure each client's code, Drive root folder ID and media buyer. Existing client delivery mappings can be edited. In Quality & rules, Senth confirms distinct primary and backup QA reviewers; configure source-linked client rules and confirm only applicable active checks. Draft GLP-1 examples are not approved policies. Record onboarding verification per user.
 
-### 4. Make worker contract (version 2)
+### 4. Make worker — staged Drive delivery
+
+The executable scenario template is `integrations/make-worker.blueprint.json`. It calls `POST /api/integrations/worker/claim`, performs one provider action, then calls `POST /api/integrations/worker/complete`. Both endpoints require the production integration bearer token. The checked-in blueprint contains a token placeholder and connection IDs of zero; select the authorised Drive and Slack connections after importing it. configure credentials privately in Make, preferably with an HTTP API-key connection. Keep execution data confidential. Never publish a scenario export containing credentials.
+
+The worker creates the job and version folders, copies the approved binary export under its exact filename, validates Drive's returned ID, name, parent, size and checksum, then sends the pinned buyer DM. Each verified action is recorded before the next one can be claimed. The app marks Delivered only after the last file and the buyer DM have been confirmed.
+
+**Source support:** this first worker supports individual Google Drive binary export links. Keep Figma/Frame.io as the review URL, then register the approved final export as the asset source. Figma/Frame.io review links alone cannot be downloaded by this worker; they stop with an actionable error before any folder is created. Direct Figma/Frame.io exporters still require their provider connections. Google Docs and folder links are not deliverable assets.
+
+**Recovery:** an outstanding provider action is marked `WORKER_PENDING`. If a callback is lost or a request times out, the claim is held instead of automatically repeating the side effect. Resume the saved completion step in Make using the original response and lease token. The callback accepts the unchanged original lease after expiration, rejects changed receipts, and accepts identical receipt retries. App retry buttons cannot bypass an unresolved provider action. Definitive configuration errors require correction before retry. Keep incomplete executions in Make; do not replay a whole provider action after its success unless the previous result has been reconciled.
+
+**Notifications:** created/assigned jobs notify the maker; internal review notifies the confirmed available QA owner; revisions notify the maker; client review resolves the registered approver email; blockers resolve a registered owner email. Missing mappings stop visibly. Status-only transitions, job approval, and delivered audit events do not create duplicate DMs. The verified-delivery event is the buyer's notification.
+
+One action runs per scheduled execution. Use a supported cadence for your Make plan and account for queue depth; on-demand execution is suitable for acceptance. Existing Notion/Tally scenarios remain separate until cutover.
+
+### Legacy signed receipt contract (version 2)
 
 Use encrypted `INTEGRATION_TOKEN` for authorization and `MAKE_WEBHOOK_SECRET` for receipt signatures. They must match the production app. Use a Make data store to reconcile each event ID and provider result before repeating a side effect. Keep secrets in protected connections/variables, never in a public scenario export or source repository.
 
