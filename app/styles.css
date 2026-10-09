@@ -53,3 +53,85 @@ select option{background:#1b2438;color:#eef1fb}
 
 /* Flexible brief fields */
 .create-modal textarea{display:block;width:100%;padding:12px;border:1px solid #354153;border-radius:8px;background:#101620;color:#f1f5f9;font:inherit;line-height:1.5;resize:vertical;margin-top:8px}.create-modal label small{line-height:1.5;color:#a9b4c7}.brief-custom-field{padding:14px;border:1px solid #354153;border-radius:10px;margin:16px 0}.brief-readout span{white-space:pre-wrap}.variant-summary small{line-height:1.6}
+
+/* Shared layout polish. Brand tokens retain the existing workspace palette. */
+:root{--surface:#151b2d;--surface-raised:#1b2438;--surface-inset:#101729;--radius:12px}
+body{line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font-family:inherit}
+button,a,input,select,textarea{touch-action:manipulation}
+:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+.sidebar,.topbar,.ops-card,.settings-card,.drawer,.create-modal{background:var(--surface)}
+.ops-card,.ops-banner,.settings-card,.job-movement,.brief-custom-field{border-color:var(--line);border-radius:var(--radius)}
+.content{padding:28px 32px 32px}
+.page-heading{align-items:center;gap:24px;margin-bottom:24px}
+.page-heading>div:first-child{min-width:0;flex:1}
+.page-heading p{line-height:1.6;max-width:660px}
+.page-actions{display:flex;align-items:center;gap:10px;flex-shrink:0}
+h1{font-size:28px;letter-spacing:-.8px;line-height:1.3}
+.primary-btn,.secondary-btn{min-height:40px;font-size:12px;border-radius:8px;padding:10px 14px}
+.icon-btn{min-width:36px;min-height:36px}
+.ops-card h2,.settings-card h2{font-size:18px;line-height:1.4;margin-bottom:12px}
+.ops-card p:last-child,.ops-banner p:last-child{margin-bottom:0}
+.ops-card,.settings-card{padding:24px;min-width:0}
+.ops-card a,.brief-readout span,.drawer-title h2{overflow-wrap:anywhere}
+.pipeline-phases button{min-height:94px}
+.pipeline-toolbar label,.pipeline-toolbar select{min-height:44px}
+.pipeline-toolbar input,.pipeline-toolbar select{font-size:13px}
+.pipeline-toolbar .secondary-btn{min-height:44px;font-size:12px}
+.pipeline-filters button{min-height:36px;padding:7px 12px}
+.pipeline-columns{grid-template-columns:repeat(6,minmax(260px,1fr));scroll-padding-inline:1px}
+.pipeline-column-header{min-height:142px;padding:16px}
+.pipeline-column-header p{min-height:40px;margin:12px 0 10px}
+.pipeline-column-header small{font-size:11px;letter-spacing:.3px}
+.pipeline-job-list{padding:12px}
+.pipeline-card{padding:16px;border-radius:10px}
+.pipeline-card-meta{flex-wrap:wrap;row-gap:4px;font-size:11px;margin-bottom:12px}
+.pipeline-client{font-size:11px}
+.pipeline-card h3{font-size:16px;line-height:1.45;margin:8px 0}
+.pipeline-card dl>div,.pipeline-card-action,.pipeline-campaign{font-size:12px}
+.pipeline-stage-footer{padding:14px;font-size:11px}
+.pipeline-empty{padding:32px 12px}
+.pipeline-empty p{font-size:12px}
+.pipeline-direction{line-height:1.5}
+.drawer,.create-modal{height:100dvh;overscroll-behavior:contain}
+.create-modal{width:min(680px,100vw)}
+.drawer-top{position:sticky;top:0;z-index:5;background:var(--surface);height:64px;min-height:64px;font-size:11px}
+.create-modal form{padding:24px 28px 0}
+.field-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.field-grid label,.full-field,.settings-card label,.manifest-form>label{font-size:13px;line-height:1.5}
+.field-grid label small,.full-field small{display:block;margin-top:8px;font-size:12px;font-weight:400}
+.field-grid input,.field-grid select,.full-field input,.full-field select,.settings-card input,.settings-card select{height:44px;font-size:14px;background:var(--surface-inset);border-color:var(--line)}
+.create-modal textarea{font-size:14px;background:var(--surface-inset);border-color:var(--line)}
+.full-field{margin:22px 0}
+.brief-heading{font-size:16px;line-height:1.5}
+.create-modal .ops-banner{padding:18px;margin:22px 0}
+.create-modal .ops-banner strong{font-size:15px}
+.variant-summary{line-height:1.6;overflow-wrap:anywhere}
+.modal-actions{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:16px 0;margin:24px 0 0;z-index:4}
+.brief-readout{grid-template-columns:repeat(2,minmax(0,1fr))}
+.brief-readout>div{padding:14px;min-width:0}
+.brief-readout small{font-size:11px}
+.brief-readout span{font-size:13px;line-height:1.6}
+.list-view>button{flex-wrap:wrap;row-gap:10px;line-height:1.5}
+.list-view>button>span:nth-child(2){min-width:140px}
+.list-view strong{font-size:13px}.list-view small{font-size:12px}
+.rules-table{display:block;overflow-x:auto;max-width:100%}
+@media(max-width:1100px){.page-heading{flex-wrap:wrap}.page-actions{margin-left:auto}.content{padding:24px}.pipeline-phases small{font-size:11px}}
+@media(max-width:700px){
+.app-shell{display:block}.sidebar{display:flex;position:relative;width:100%;height:auto;min-height:0;padding:14px 16px 8px;border-right:0;border-bottom:1px solid var(--line);overflow:visible}
+.sidebar .brand{padding:0 0 12px}.sidebar .workspace,.sidebar .nav-caption,.sidebar .sidebar-user{display:none}
+.sidebar .nav-group{display:flex;overflow-x:auto;gap:6px;padding:0 0 6px;scrollbar-width:thin}
+.sidebar .nav-item{width:auto;flex:none;white-space:nowrap;padding:10px 12px;margin:0;font-size:12px;min-height:40px}
+.sidebar .bottom-nav{margin-top:4px}.sidebar .bottom-nav .nav-caption{display:none}
+.topbar{padding:0 16px;height:54px}.topbar .today{display:none}.content,.content:has(.pipeline-workspace){padding:20px 16px}
+.page-heading{gap:16px}.page-actions{margin-left:0;width:100%}.page-actions .primary-btn{margin-left:auto}
+h1{font-size:25px}.eyebrow{font-size:9px;margin-bottom:8px}
+.pipeline-explainer{gap:12px}.pipeline-phases{gap:8px}.pipeline-phases button{min-height:100px}
+.pipeline-phases small{font-size:12px;line-height:1.45;display:block}.pipeline-toolbar label{flex-basis:100%;min-width:0}.pipeline-toolbar select{width:100%;max-width:none}
+.pipeline-filters{flex-wrap:nowrap;overflow-x:auto;padding:2px 0 8px}.pipeline-filters button{flex:none}
+.pipeline-columns,.pipeline-columns.phase-focused{grid-template-columns:repeat(6,minmax(280px,1fr))}.pipeline-columns.phase-focused{grid-template-columns:repeat(2,minmax(280px,1fr))}
+.drawer-top{padding:0 18px}.create-modal form{padding:20px 18px 0}.field-grid,.drawer .field-grid,.brief-readout{grid-template-columns:1fr}
+.field-grid input,.field-grid select,.full-field input,.full-field select,.create-modal textarea{font-size:16px}
+.ops-card,.settings-card{padding:18px}.ops-metrics{flex-wrap:wrap;gap:20px}.ops-banner .secondary-btn{margin:12px 0 0}
+}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
