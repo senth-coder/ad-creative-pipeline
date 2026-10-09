@@ -5,6 +5,8 @@ import { currentUser, mayCreate } from '@/lib/permissions';
 import { error, jsonBody } from '@/lib/api';
 import { jobInclude, serializeJob, toDbStatus } from '@/lib/serialize';
 import { operationsFor, reviewReadiness } from '@/lib/operations';
+import {routeQa,releaseProblem} from '@/lib/assurance';
+import {readGovernance,serializeAsset} from '@/lib/assurance-server';
 import { statuses, transitions } from '@/lib/workflow';
 
 const schema=z.object({next:z.enum(statuses),reason:z.string().trim().max(1000).optional(),approvalEvidenceUrl:z.url().refine(v=>/^https?:\/\//i.test(v)).optional()});
@@ -26,7 +28,17 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
  const evidence=approvalEvidenceUrl||operations.approvalEvidenceUrl;
  if(revision&&(!effectiveReason||!operations.feedbackUrl||!operations.revisionDue))return error('Record revision reason, feedback link and return date first');
  if((next==='Internal Review'||next==='Client Review'||next==='Approved')&&!job.reviewUrl)return error('A Figma or Frame.io review link is required',409);
- if(next==='Internal Review'&&(!job.client.qaMembers.length||job.client.qaMembers.some(q=>!q.user.slackUserId)))return error('Client QA team and Slack IDs must be configured',409);
+ const governance=readGovernance(job.client.governance);
+ let qaSlackIds:string[]=[];
+ if(next==='Internal Review'){
+ const people=await db.user.findMany({where:{email:{in:[governance.primaryQaEmail,governance.backupQaEmail].map(e=>e.toLowerCase())}}});
+ const route=routeQa(governance,people.map(p=>({...p,onboarding:undefined})));if(!route.person)return error(route.reason,409);qaSlackIds=[route.person.slackUserId!];
+ }
+ if(next==='Approved'){
+ const assets=await db.assetVersion.findMany({where:{variant:{jobId:id}},include:{variant:true}});
+ const problem=releaseProblem(job.variants.map(v=>v.code),assets.map(serializeAsset),governance,job.client.governanceVersion);if(problem)return error(problem,409);
+ }
+
  if(next==='In Production'&&current!=='Briefed'&&!effectiveReason)return error('Changes Required needs a reason or feedback reference');
  if(next==='Approved'&&!evidence)return error('Record the external client approval evidence URL');
  try {
@@ -35,7 +47,7 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
    if(result.count!==1)throw new Error('Job changed while you were editing');
    await tx.auditEvent.create({data:{jobId:id,actorId:user.id,action:next==='In Production'&&current!=='Briefed'?'review.changes_required':'job.transition',before:{status:job.status},after:{status:toDbStatus[next],approvalEvidenceUrl:evidence},reason:effectiveReason}});
    const type=next==='Internal Review'?'review.internal.ready':next==='Client Review'?'review.client.ready':next==='Approved'?'job.approved':next==='In Production'&&current!=='Briefed'?'review.changes_required':'job.transition';
-   await tx.outboxEvent.create({data:{type,payload:{jobId:id,clientId:job.clientId,from:job.status,to:toDbStatus[next],reason:effectiveReason,feedbackUrl:operations.feedbackUrl,revisionDue:operations.revisionDue,assigneeSlackId:job.assignee?.slackUserId,approvalOwnerEmail:job.client.plan?.approverEmail,releaseOwnerEmail:job.client.plan?.releaseOwnerEmail,qaSlackIds:next==='Internal Review'?job.client.qaMembers.map(q=>q.user.slackUserId).filter(Boolean):[]}}});
+   await tx.outboxEvent.create({data:{type,payload:{jobId:id,clientId:job.clientId,from:job.status,to:toDbStatus[next],reason:effectiveReason,feedbackUrl:operations.feedbackUrl,revisionDue:operations.revisionDue,assigneeSlackId:job.assignee?.slackUserId,approvalOwnerEmail:job.client.plan?.approverEmail,releaseOwnerEmail:job.client.plan?.releaseOwnerEmail,qaSlackIds}}});
    if(next==='Approved')await tx.deliveryBatch.create({data:{jobId:id}});
    return tx.job.findUniqueOrThrow({where:{id},include:jobInclude});
   });

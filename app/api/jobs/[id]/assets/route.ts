@@ -1,0 +1,24 @@
+import {NextResponse} from 'next/server';
+import {db} from '@/lib/db';
+import {currentUser,mayCreate,mayEdit,mayView} from '@/lib/permissions';
+import {error,jsonBody} from '@/lib/api';
+import {assetSchema,reviewSchema,assessAsset,deliveryFilename} from '@/lib/assurance';
+import {readGovernance,serializeAsset} from '@/lib/assurance-server';
+export async function GET(_request:Request,{params}:{params:Promise<{id:string}>}){const user=await currentUser();if(!user)return error('Sign in required',401);const {id}=await params;const job=await db.job.findUnique({where:{id},include:{client:true}});if(!job)return error('Job not found',404);if(!await mayView(user,job))return error('Not permitted',403);const assets=await db.assetVersion.findMany({where:{variant:{jobId:id}},include:{variant:true},orderBy:[{version:'desc'}]});return NextResponse.json({assets:assets.map(serializeAsset),governance:readGovernance(job.client.governance),policyVersion:job.client.governanceVersion,policySnapshot:job.policySnapshot});}
+export async function POST(request:Request,{params}:{params:Promise<{id:string}>}){
+ const user=await currentUser();if(!user)return error('Sign in required',401);const {id}=await params;const job=await db.job.findUnique({where:{id},include:{variants:true}});if(!job)return error('Job not found',404);if(!mayEdit(user,job.assigneeId))return error('Not permitted',403);if(['APPROVED','DELIVERED'].includes(job.status))return error('Create an iteration brief for approved or delivered assets',409);
+ const parsed=assetSchema.safeParse(await jsonBody(request));if(!parsed.success)return error(parsed.error.issues.map(i=>i.message).join('; '));const input=parsed.data;const variant=job.variants.find(v=>v.code===input.variantCode);if(!variant)return error('Variant not found');
+ try{const asset=await db.$transaction(async tx=>{
+ const current=await tx.job.updateMany({where:{id,updatedAt:job.updatedAt,status:job.status},data:{updatedAt:new Date()}});if(current.count!==1)throw new Error('Job changed. Refresh first.');
+ const latest=await tx.assetVersion.findFirst({where:{variantId:variant.id},orderBy:{version:'desc'}});if(latest&&input.version<=latest.version)throw new Error('New asset revisions must increase the version');
+ const filename=deliveryFilename(input.naming);const collision=await tx.assetVersion.findFirst({where:{filename,variant:{jobId:id},NOT:{variantId:variant.id}}});if(collision)throw new Error('Use a distinct descriptor for each variant');
+ const record=await tx.assetVersion.create({data:{variantId:variant.id,version:input.version,briefRevision:input.briefRevision,sourceBriefUrl:input.sourceBriefUrl,sourceUrl:input.sourceUrl,externalAssetId:input.externalAssetId,filename,copyText:input.copyText,naming:input.naming,revisionNote:input.revisionNote},include:{variant:true}});
+ await tx.auditEvent.create({data:{jobId:id,actorId:user.id,action:'asset.revision.registered',after:{assetId:record.id,variantCode:input.variantCode,version:input.version,briefRevision:input.briefRevision,sourceBriefUrl:input.sourceBriefUrl,filename}}});return record;
+ });return NextResponse.json({asset:serializeAsset(asset)},{status:201});}catch(e){return error((e as Error).message,409)}
+}
+export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
+ const user=await currentUser();if(!user)return error('Sign in required',401);const {id}=await params;const job=await db.job.findUnique({where:{id},include:{client:{include:{qaMembers:true}}}});if(!job)return error('Job not found',404);if(!mayCreate(user)&&!(user.role==='QA'&&job.client.qaMembers.some(q=>q.userId===user.id)))return error('Assigned QA or a strategist must review assets',403);
+ const parsed=reviewSchema.safeParse(await jsonBody(request));if(!parsed.success)return error('Add review evidence and checklist responses');const input=parsed.data;const asset=await db.assetVersion.findUnique({where:{id:input.assetId},include:{variant:true}});if(!asset||asset.variant.jobId!==id)return error('Asset not found',404);
+ const serialized=serializeAsset(asset);if(!serialized.naming)return error('Register this legacy asset using the new naming convention');const g=readGovernance(job.client.governance);const findings=assessAsset(serialized,g,input.humanChecks,input.copyVerified);const review={policyVersion:job.client.governanceVersion,reviewedAt:new Date().toISOString(),reviewer:user.email,...input,passed:findings.every(f=>f.result==='pass')};
+ await db.$transaction(async tx=>{await tx.assetVersion.update({where:{id:asset.id},data:{review,approved:review.passed}});await tx.auditEvent.create({data:{jobId:id,actorId:user.id,action:'asset.qa.reviewed',after:{assetId:asset.id,review,findings}}})});return NextResponse.json({review,findings});
+}

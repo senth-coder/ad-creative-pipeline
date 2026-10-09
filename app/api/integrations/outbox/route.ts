@@ -1,10 +1,7 @@
-import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { error } from '@/lib/api';
-
-export async function GET(request:Request){
- const token=request.headers.get('authorization')?.replace(/^Bearer /,'');
- if(!process.env.INTEGRATION_TOKEN||token!==process.env.INTEGRATION_TOKEN)return error('Not authorized',401);
- const events=await db.outboxEvent.findMany({where:{deliveredAt:null,attempts:{lt:10}},orderBy:{createdAt:'asc'},take:50});
- return NextResponse.json({events});
-}
+import {NextResponse} from 'next/server';
+import {randomUUID} from 'node:crypto';
+import {db} from '@/lib/db';
+import {error} from '@/lib/api';
+function authorized(request:Request){return Boolean(process.env.INTEGRATION_TOKEN)&&request.headers.get('authorization')===`Bearer ${process.env.INTEGRATION_TOKEN}`;}
+export async function GET(request:Request){if(!authorized(request))return error('Not authorized',401);const events=await db.outboxEvent.findMany({where:{deliveredAt:null,attempts:{lt:10},OR:[{leasedUntil:null},{leasedUntil:{lt:new Date()}}]},orderBy:{createdAt:'asc'},take:50});return NextResponse.json({schemaVersion:1,events:events.map(e=>({...e,idempotencyKey:e.id})),note:'Use POST to claim work before processing. Deduplicate side effects using idempotencyKey.'});}
+export async function POST(request:Request){if(!authorized(request))return error('Not authorized',401);const now=new Date(),leasedUntil=new Date(now.getTime()+5*60*1000);const candidates=await db.outboxEvent.findMany({where:{deliveredAt:null,attempts:{lt:10},OR:[{leasedUntil:null},{leasedUntil:{lt:now}}]},orderBy:{createdAt:'asc'},take:25});const events=[];for(const candidate of candidates){const leaseToken=randomUUID();const claimed=await db.outboxEvent.updateMany({where:{id:candidate.id,deliveredAt:null,OR:[{leasedUntil:null},{leasedUntil:{lt:now}}]},data:{leaseToken,leasedUntil,attempts:{increment:1}}});if(claimed.count)events.push({...candidate,leaseToken,leasedUntil,idempotencyKey:candidate.id});}return NextResponse.json({schemaVersion:1,events});}
