@@ -135,3 +135,5 @@ h1{font-size:25px}.eyebrow{font-size:9px;margin-bottom:8px}
 .ops-card,.settings-card{padding:18px}.ops-metrics{flex-wrap:wrap;gap:20px}.ops-banner .secondary-btn{margin:12px 0 0}
 }
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+.review-queues{display:grid;gap:20px}.review-queues .list-view{min-height:0;padding:0}.review-queues .list-view:empty{display:none}.review-queues h2 small{display:inline;font-size:14px;font-weight:500;margin-left:6px}.review-queues .ops-card>.muted{padding:20px 16px;border:1px dashed var(--line);border-radius:8px;margin:20px 0}
