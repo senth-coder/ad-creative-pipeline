@@ -12,7 +12,7 @@ export function transition(job: Job, next: Status, actor: string): Job {
   const ops=operationsFor(job);
   if(next==='Approved'&&!ops.approvalEvidenceUrl)throw new Error('Record the external approval reference in QA & blockers.');
   if(next==='In Production'&&job.status!=='Briefed'&&(!ops.revisionReason||!ops.feedbackUrl||!ops.revisionDue))throw new Error('Record the revision reason, feedback link and return date in QA & blockers.');
-  return { ...job, operations:next==='In Production'&&job.status!=='Briefed'?{...ops,checklist:[]}:ops, status: next, updatedAt: new Date().toISOString(), ...(next === 'Approved' ? {approvedBy: actor} : {}) };
+  return { ...job, operations:next==='In Production'&&job.status!=='Briefed'?{...ops,checklist:[],approvalEvidenceUrl:''}:ops, status: next, updatedAt: new Date().toISOString(), ...(next === 'Approved' ? {approvedBy: actor} : {}) };
 }
 export const seedJobs: Job[] = [
   {id:'j-501',number:501,title:'Fresh start hooks',client:'Ghost Growth',campaign:'Autumn Acquisition',concept:'First impression',type:'Video',status:'Briefed',assignee:'Unassigned',qa:'Creative QA',mediaBuyer:'Media buyer',due:'2026-10-08',variants:['A','B','C'],reviewUrl:'',source:'Manual',updatedAt:'2026-10-01T13:00:00Z'},

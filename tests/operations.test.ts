@@ -14,8 +14,9 @@ test('QA checklist gates internal review and blockers prevent progress',()=>{
 test('revision records require a feedback reference and date; returning resets checklist',()=>{
  const reviewed={...production,status:'Internal Review' as const,operations:{...emptyOperations(),checklist:qaChecks.map(([key])=>key)}};
  assert.throws(()=>transition(reviewed,'In Production','QA'),/revision/);
- const updated=transition({...reviewed,operations:{...reviewed.operations,revisionReason:'Fix packaging',feedbackUrl:'https://frame.io/review/123',revisionDue:'2026-10-10'}},'In Production','QA');
+ const updated=transition({...reviewed,operations:{...reviewed.operations,revisionReason:'Fix packaging',approvalEvidenceUrl:'https://slack.com/old-approval',feedbackUrl:'https://frame.io/review/123',revisionDue:'2026-10-10'}},'In Production','QA');
  assert.deepEqual(updated.operations?.checklist,[]);
+ assert.equal(updated.operations?.approvalEvidenceUrl,'');
  assert.equal(updated.operations?.revisionReason,'Fix packaging');
 });
 test('external approval evidence is distinct from a review URL',()=>{

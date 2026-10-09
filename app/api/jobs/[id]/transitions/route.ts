@@ -31,7 +31,7 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
  if(next==='Approved'&&!evidence)return error('Record the external client approval evidence URL');
  try {
   const updated=await db.$transaction(async tx=>{
-   const result=await tx.job.updateMany({where:{id,status:job.status,updatedAt:job.updatedAt},data:{operations:{...operations,...(revision?{checklist:[]}:{}),...(next==='Approved'?{approvalEvidenceUrl:evidence}:{})},status:toDbStatus[next],approvedBy:next==='Approved'?user.name:undefined,approvedAt:next==='Approved'?new Date():undefined}});
+   const result=await tx.job.updateMany({where:{id,status:job.status,updatedAt:job.updatedAt},data:{operations:{...operations,...(revision?{checklist:[],approvalEvidenceUrl:''}:{}),...(next==='Approved'?{approvalEvidenceUrl:evidence}:{})},status:toDbStatus[next],approvedBy:next==='Approved'?user.name:undefined,approvedAt:next==='Approved'?new Date():undefined}});
    if(result.count!==1)throw new Error('Job changed while you were editing');
    await tx.auditEvent.create({data:{jobId:id,actorId:user.id,action:next==='In Production'&&current!=='Briefed'?'review.changes_required':'job.transition',before:{status:job.status},after:{status:toDbStatus[next],approvalEvidenceUrl:evidence},reason:effectiveReason}});
    const type=next==='Internal Review'?'review.internal.ready':next==='Client Review'?'review.client.ready':next==='Approved'?'job.approved':next==='In Production'&&current!=='Briefed'?'review.changes_required':'job.transition';
