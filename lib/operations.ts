@@ -60,4 +60,4 @@ export const intakeSchema=z.object({id:z.string().min(1).max(200),title:z.string
 export function intakeTitle(event:Intake){return event.payload.title||event.payload.task?.title||'Untitled intake';}
 export function duplicateCandidates(event:Intake,events:Intake[]){return events.filter(other=>other.id!==event.id&&!other.dismissedAt&&intakeTitle(other).trim().toLowerCase()===intakeTitle(event).trim().toLowerCase()&&(other.payload.client||'').trim().toLowerCase()===(event.payload.client||'').trim().toLowerCase());}
 
-export function localDate(date=new Date()){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
+export function localDate(date=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Toronto',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {cycleWindow,duplicateCandidates,emptyOperations,intakeSchema,launchSchema,operationsSchema,qaChecks,reviewReadiness,validateLaunch,type Intake} from '../lib/operations';
+import {localDate,cycleWindow,duplicateCandidates,emptyOperations,intakeSchema,launchSchema,operationsSchema,qaChecks,reviewReadiness,validateLaunch,type Intake} from '../lib/operations';
 import {seedJobs,transition,type Job} from '../lib/workflow';
 const production:Job={...seedJobs[1],operations:emptyOperations()};
 test('QA checklist gates internal review and blockers prevent progress',()=>{
@@ -46,3 +46,5 @@ test('normalized intake retains repeated offers and flags possible duplicates',(
  assert.equal(intakeSchema.safeParse({...payload,sourceUrl:'javascript:alert(1)'}).success,false);
  assert.equal(operationsSchema.safeParse({feedbackUrl:'javascript:alert(1)'}).success,false);
 });
+
+test('workspace day uses Toronto across UTC midnight and daylight saving',()=>{assert.equal(localDate(new Date('2026-10-09T02:00:00Z')),'2026-10-08');assert.equal(localDate(new Date('2026-01-02T04:30:00Z')),'2026-01-01');assert.equal(localDate(new Date('2026-07-02T04:30:00Z')),'2026-07-02')});
