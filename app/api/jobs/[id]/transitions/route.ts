@@ -1,3 +1,4 @@
+import {assignedQaId} from '@/lib/qa-routing';
 import {wakeWorker} from '@/lib/worker-wake';
 import {lockClient} from '@/lib/locking';
 import { Prisma } from '@prisma/client';
@@ -23,7 +24,8 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
  const current=Object.keys(toDbStatus).find(k=>toDbStatus[k as keyof typeof toDbStatus]===job.status) as keyof typeof toDbStatus;
  if(!transitions[current].includes(next))return error(`Cannot move ${current} to ${next}`,409);
  const isMaker=user.role==='MAKER'&&job.assigneeId===user.id;
- const isQa=user.role==='QA'&&job.client.qaMembers.some(q=>q.userId===user.id);
+ const assigned=assignedQaId(job.brief);
+ const isQa=user.role==='QA'&&(assigned?assigned===user.id:job.client.qaMembers.some(q=>q.userId===user.id));
  const permitted=mayCreate(user)||(current==='Briefed'&&isMaker)||(current==='In Production'&&isMaker)||(current==='Internal Review'&&isQa);
  if(!permitted)return error('Not permitted',403);
  const readiness=reviewReadiness(serializeJob(job),next);if(readiness)return error(readiness,409);
@@ -35,8 +37,9 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
  const governance=readGovernance(job.client.governance);
  let qaSlackIds:string[]=[];
  if(next==='Internal Review'){
+ if(assigned){const reviewer=await db.user.findUnique({where:{id:assigned}});if(!reviewer||!['QA','ADMIN','STRATEGIST'].includes(reviewer.role)||reviewer.qaUnavailable||!reviewer.slackUserId)return error('Assigned QA reviewer is unavailable or missing their Slack mapping. Ask a strategist to resolve coverage.',409);qaSlackIds=[reviewer.slackUserId];}else{
  const people=await db.user.findMany({where:{email:{in:[governance.primaryQaEmail,governance.backupQaEmail].map(e=>e.toLowerCase())}}});
- const route=routeQa(governance,people.map(p=>({...p,onboarding:undefined})));if(!route.person)return error(route.reason,409);qaSlackIds=[route.person.slackUserId!];
+ const route=routeQa(governance,people.map(p=>({...p,onboarding:undefined})));if(!route.person)return error(route.reason,409);qaSlackIds=[route.person.slackUserId!];}
  }
  if(next==='Approved'||next==='Client Review'){
  const assets=await db.assetVersion.findMany({where:{variant:{jobId:id}},include:{variant:true}});

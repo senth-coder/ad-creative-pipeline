@@ -9,6 +9,7 @@ export const sharedFields:BriefField[]=[
  {key:'references',label:'Brand and source references',placeholder:'Links to source assets or brand guidance'}
 ];
 export const typeFields:Record<CreativeType,BriefField[]>={
+ UGC:[{key:'creator',label:'Creator / talent',placeholder:'Creator name or casting direction'},{key:'script',label:'Script / talking points',placeholder:'Hook, demonstration, proof and CTA'},{key:'duration',label:'Target duration',placeholder:'e.g. 30 seconds'},{key:'aspectRatio',label:'Aspect ratio',placeholder:'e.g. 9:16'}],
  Video:[{key:'duration',label:'Target duration',placeholder:'e.g. 15 seconds',required:true},{key:'aspectRatio',label:'Aspect ratio',placeholder:'e.g. 9:16',required:true},{key:'platform',label:'Placement',placeholder:'e.g. Meta Reels'}],
  Static:[{key:'dimensions',label:'Dimensions',placeholder:'e.g. 1080 × 1080',required:true},{key:'copyLimit',label:'Copy limit',placeholder:'e.g. 30 words'}],
  Carousel:[{key:'cardCount',label:'Number of cards',placeholder:'e.g. 5',required:true},{key:'dimensions',label:'Dimensions',placeholder:'e.g. 1080 × 1080'}],

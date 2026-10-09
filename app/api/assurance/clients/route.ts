@@ -1,3 +1,4 @@
+import {canonicalQaClient,briefFormats,reviewerNames} from '@/lib/qa-routing';
 import {NextResponse} from 'next/server';
 import {z} from 'zod';
 import {db} from '@/lib/db';
@@ -18,6 +19,7 @@ export async function POST(request:Request){
  try{await db.$transaction(async tx=>{
  const updated=await tx.client.updateMany({where:{id:clientId,governanceVersion:expectedVersion},data:{governance:g,governanceVersion:{increment:1},confirmedBy:g.routingConfirmed?(changedRoute?user.email:client.confirmedBy):null}});if(updated.count!==1)throw new Error('Client rules changed. Refresh and try again.');
  await tx.clientQa.deleteMany({where:{clientId}});
+ if(canonicalQaClient(client.name)){const names=[...new Set(briefFormats.flatMap(f=>reviewerNames(client.name,f)))];const mapped=await tx.user.findMany({where:{name:{in:names},role:{in:['QA','ADMIN','STRATEGIST']}}});for(const p of mapped)await tx.clientQa.upsert({where:{clientId_userId:{clientId,userId:p.id}},create:{clientId,userId:p.id},update:{}});}
  if(g.routingConfirmed){for(const reviewer of reviewers)await tx.clientQa.upsert({where:{clientId_userId:{clientId,userId:reviewer.id}},create:{clientId,userId:reviewer.id},update:{}});}
  await tx.auditEvent.create({data:{actorId:user.id,action:'client.governance.updated',after:{clientId,version:expectedVersion+1,policyChanged,routingConfirmed:g.routingConfirmed}}});
  });return NextResponse.json({saved:true,version:expectedVersion+1});}catch(e){return error((e as Error).message,409)}

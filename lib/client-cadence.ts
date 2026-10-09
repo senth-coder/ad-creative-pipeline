@@ -21,7 +21,7 @@ export function cadenceWindow(schedule:FormatSchedule,today:string){
  return {from,until,through,upcoming:today<from};
 }
 export function cadenceProgress(jobs:Job[],client:string,format:'statics'|'videos',schedule:FormatSchedule,today:string){
- const window=cadenceWindow(schedule,today),types=format==='statics'?['Static','Carousel']:['Video','Motion'];
+ const window=cadenceWindow(schedule,today),types=format==='statics'?['Static','Carousel']:['Video','Motion','UGC'];
  const matching=jobs.filter(j=>j.client===client&&types.includes(j.type));
  const delivered=matching.filter(j=>j.status==='Delivered'&&j.deliveredAt&&localDate(new Date(j.deliveredAt))>=window.from&&localDate(new Date(j.deliveredAt))<window.until).reduce((n,j)=>n+j.variants.length,0);
  const planned=matching.filter(j=>j.status!=='Delivered'&&j.due>=window.from&&j.due<window.until).reduce((n,j)=>n+j.variants.length,0);

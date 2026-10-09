@@ -1,3 +1,4 @@
+import {canonicalQaClient,chooseQa} from '@/lib/qa-routing';
 import {briefPlan,flexibleFields} from '@/lib/brief-plan';
 import {wakeWorker} from '@/lib/worker-wake';
 import { NextResponse } from 'next/server';
@@ -12,7 +13,7 @@ import {sharedFields,typeFields,requiredBriefProblem, type BriefField} from '@/l
 import { ruleSchema } from '@/lib/config';
 
 export const dynamic='force-dynamic';
-const createSchema=z.object({title:z.string().trim().min(2).max(160),client:z.string().min(1),campaign:z.string().trim().min(2),concept:z.string().trim().min(2),type:z.enum(['Video','Static','Carousel','Motion']),due:z.iso.date(),assignee:z.string().trim().optional(),source:z.enum(['Manual','Motion','Tally','Slack','Notion']).default('Manual'),parentJobId:z.string().optional(),brief:z.record(z.string(),z.string()).optional()});
+const createSchema=z.object({title:z.string().trim().min(2).max(160),client:z.string().min(1),campaign:z.string().trim().min(2),concept:z.string().trim().min(2),type:z.enum(['Video','Static','Carousel','Motion','UGC']),due:z.iso.date(),assignee:z.string().trim().optional(),source:z.enum(['Manual','Motion','Tally','Slack','Notion']).default('Manual'),parentJobId:z.string().optional(),brief:z.record(z.string(),z.string()).optional()});
 
 export async function GET() {
  const user=await currentUser(); if(!user)return error('Sign in required',401);
@@ -32,9 +33,12 @@ export async function POST(request:Request) {
  if(data.parentJobId){const parent=await db.job.findUnique({where:{id:data.parentJobId}});if(!parent||parent.clientId!==client.id)return error('Original job must belong to this client');}
  const matches=data.assignee?await db.user.findMany({where:{name:data.assignee,role:'MAKER'},take:2}):[];if(matches.length>1)return error('More than one maker has this name. Give team members distinct display names in Settings.');
  const assignee=matches[0]||null;
+ let selectedQa:Awaited<ReturnType<typeof chooseQa>>|undefined;
+ if(canonicalQaClient(client.name)){try{selectedQa=chooseQa(client.name,data.type,await db.user.findMany(),data.brief?.qaReviewerId);data.brief={...data.brief,qaReviewerId:selectedQa.id,qaReviewerName:selectedQa.name,qaRouteVersion:'2026-10-09'};}catch(e){return error((e as Error).message);}}else if(data.brief&&['qaReviewerId','qaReviewerName','qaRouteVersion'].some(k=>data.brief?.[k]))return error('Client QA route not configured');
  if(data.assignee && !assignee)return error('Assigned maker must be a configured user.');
  try {const created=await db.$transaction(async tx=>{
    if(eventId){const claimed=await tx.inboundEvent.updateMany({where:{id:eventId,provider:data.source.toLowerCase(),processedAt:null,dismissedAt:null},data:{processedAt:new Date()}});if(claimed.count!==1)throw new Error('Intake item was already processed or is unavailable');}
+   if(selectedQa)await tx.clientQa.upsert({where:{clientId_userId:{clientId:client.id,userId:selectedQa.id}},create:{clientId:client.id,userId:selectedQa.id},update:{}});
    const campaign=await tx.campaign.upsert({where:{clientId_name:{clientId:client.id,name:data.campaign}},create:{clientId:client.id,name:data.campaign},update:{}});
    let concept=await tx.concept.findFirst({where:{campaignId:campaign.id,name:data.concept}});
    if(!concept)concept=await tx.concept.create({data:{campaignId:campaign.id,name:data.concept}});
