@@ -1,3 +1,4 @@
+import {briefPlan,flexibleFields} from '@/lib/brief-plan';
 import {wakeWorker} from '@/lib/worker-wake';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -39,10 +40,10 @@ export async function POST(request:Request) {
    if(!concept)concept=await tx.concept.create({data:{campaignId:campaign.id,name:data.concept}});
    const template=await tx.briefTemplate.findFirst({where:{type:data.type,active:true},orderBy:{version:'desc'}});
    const rule=await tx.variantRule.findFirst({where:{type:data.type,active:true},orderBy:{version:'desc'}});
-   const fields=(template?.fields as BriefField[]|undefined)||[...sharedFields,...typeFields[data.type]];
+   const fields=flexibleFields((template?.fields as BriefField[]|undefined)||[...sharedFields,...typeFields[data.type]]);
    const problem=requiredBriefProblem(fields,data.brief);if(problem)throw new Error(problem);
    const configured=ruleSchema.safeParse(rule?.rule);
-   const letters=configured.success?configured.data.letters:variantsFor(data.type as CreativeType);
+   const letters=briefPlan(data.brief||{},configured.success?configured.data.letters:variantsFor(data.type as CreativeType));
    const job=await tx.job.create({data:{clientId:client.id,campaignId:campaign.id,conceptId:concept.id,title:data.title,type:data.type,source:data.source.toUpperCase() as 'MANUAL'|'MOTION'|'TALLY'|'SLACK'|'NOTION',sourceExternalId:eventId||undefined,parentJobId:data.parentJobId,dueAt:new Date(data.due+'T12:00:00Z'),assigneeId:assignee?.id,brief:(data.brief||{}) as Prisma.InputJsonValue,policySnapshot:{version:client.governanceVersion,governance:client.governance as Prisma.InputJsonValue||{}},templateSnapshot:fields as Prisma.InputJsonValue,ruleSnapshot:{letters},variants:{create:letters.map(code=>({code,spec:{},origin:'RULE'}))}},include:jobInclude});
    if(eventId)await tx.inboundEvent.update({where:{id:eventId},data:{jobId:job.id}});
    await tx.auditEvent.create({data:{jobId:job.id,actorId:user.id,action:'job.created',after:{number:job.number,status:'BRIEFED'}}});

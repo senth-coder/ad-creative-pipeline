@@ -25,6 +25,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
  if(['APPROVED','DELIVERED'].includes(existing.status))return error('Approved and delivered jobs are locked',409);
  if(data.reviewUrl!==undefined&&data.reviewUrl!==existing.reviewUrl&&['INTERNAL_REVIEW','CLIENT_REVIEW'].includes(existing.status))return error('Use Changes Required before replacing a review link',409);
  if((data.brief||data.title)&&!['BRIEFED','IN_PRODUCTION'].includes(existing.status))return error('Use Changes Required before editing the brief',409);
+ if(data.brief&&data.brief.assetCount!==(existing.brief as Record<string,string>|null)?.assetCount)return error('Asset quantity is fixed for this brief. Create a new brief for additional outputs.');
  if(data.brief){const fields=(existing.templateSnapshot as BriefField[]|null)||[...sharedFields,...typeFields[existing.type as keyof typeof typeFields]];const issue=requiredBriefProblem(fields,data.brief);if(issue)return error(issue);}
  if(data.expectedUpdatedAt&&data.expectedUpdatedAt!==existing.updatedAt.toISOString())return error('Job changed. Refresh first.',409);
  const matches=data.assignee?await db.user.findMany({where:{name:data.assignee,role:'MAKER'},take:2}):[];if(matches.length>1)return error('More than one maker has this name. Use distinct display names in Settings.');
