@@ -33,6 +33,7 @@ export async function finishMotion(state:string,code:string,actorId:string){
  const t=await jsonRequest(MOTION_ISSUER+'/oauth2/token',new URLSearchParams({grant_type:'authorization_code',code,client_id:attempt.clientId,redirect_uri:CALLBACK,code_verifier:attempt.verifier,resource:MOTION_ENDPOINT}),true);
  if(typeof t.access_token!=='string'||t.token_type?.toLowerCase()!=='bearer')throw new Error('Invalid Motion token response');
  await save(CONNECTION,{access_token:t.access_token,refresh_token:t.refresh_token,expires_at:Date.now()+Number(t.expires_in||3600)*1000,scope:t.scope||SCOPES,client_id:attempt.clientId,connectedAt:new Date().toISOString(),connectedBy:actorId});
+ await db.inboundEvent.deleteMany({where:{provider:'motion_connection',OR:[{externalId:{in:['integration:motion:capabilities','integration:motion:workspaces']}},{externalId:{startsWith:'integration:motion:reports:'}}]}});
  await db.auditEvent.create({data:{actorId,action:'motion.connected',after:{endpoint:MOTION_ENDPOINT}}});
 }
 async function token(){
@@ -42,16 +43,34 @@ async function token(){
  },{timeout:30000,maxWait:5000});
 }
 export function parseMcp(text:string,id:number){let messages:Record<string,unknown>[]=[];try{messages=[JSON.parse(text)];}catch{messages=text.split(/\r?\n\r?\n/).flatMap(block=>{const s=block.split(/\r?\n/).filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trimStart()).join('\n');try{return s?[JSON.parse(s)]:[];}catch{return [];}});}const m=messages.find(m=>m.id===id);if(!m||m.error||!m.result)throw new Error('Motion returned an invalid MCP response');return m.result as Record<string,unknown>;}
-export async function testMotion(){
+async function motionSession(){
  const access=await token();let session='';let protocol='2025-03-26';
  async function rpc(method:string,params:unknown,id?:number){const headers:Record<string,string>={'Content-Type':'application/json',Accept:'application/json, text/event-stream',Authorization:`Bearer ${access}`};if(session)headers['Mcp-Session-Id']=session;headers['MCP-Protocol-Version']=protocol;
   const r=await fetch(MOTION_ENDPOINT,{method:'POST',redirect:'error',headers,body:JSON.stringify({jsonrpc:'2.0',...(id===undefined?{}:{id}),method,params}),cache:'no-store',signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error(`Motion connection test failed (${r.status}). Reconnect if access has expired.`);session=r.headers.get('mcp-session-id')||session;if(id===undefined){await r.body?.cancel();return {};}const body=await r.text();if(body.length>2000000)throw new Error('Motion response is too large');return parseMcp(body,id);
  }
  const init=await rpc('initialize',{protocolVersion:protocol,capabilities:{},clientInfo:{name:'Ghost Growth Creative OS',version:'1.0.0'}},1);if(typeof init.protocolVersion==='string')protocol=init.protocolVersion;await rpc('notifications/initialized',{});
+ return rpc;
+}
+export async function testMotion(){
+ const rpc=await motionSession();
  const tools:Tool[]=[];let cursor:string|undefined;let complete=false;
  for(let page=0;page<20;page++){const result=await rpc('tools/list',cursor?{cursor}:{},page+2);if(!Array.isArray(result.tools))throw new Error('Motion did not return a tool list');tools.push(...result.tools as Tool[]);cursor=typeof result.nextCursor==='string'?result.nextCursor:undefined;if(!cursor){complete=true;break;}}
  if(!complete)throw new Error('Motion tool listing exceeded the page limit');
- const checkedAt=new Date().toISOString();await save('integration:motion:capabilities',{checkedAt,tools});return {checkedAt,tools};
+ const checkedAt=new Date().toISOString();await save('integration:motion:capabilities',{checkedAt,tools});await loadMotionWorkspaces();return {checkedAt,tools};
 }
-export async function motionStatus(){const t=await read<Tokens>(CONNECTION);const c=await read<{checkedAt:string;tools:Tool[]}>('integration:motion:capabilities');return {connected:Boolean(t),endpoint:MOTION_ENDPOINT,connectedAt:t?.connectedAt,scope:t?.scope,checkedAt:c?.checkedAt,tools:c?.tools||[],syncActive:false};}
-export async function disconnectMotion(actorId:string){await db.inboundEvent.deleteMany({where:{externalId:{in:[CONNECTION,'integration:motion:capabilities']}}});await db.auditEvent.create({data:{actorId,action:'motion.disconnected'}});}
+export async function motionStatus(){const t=await read<Tokens>(CONNECTION);const c=await read<{checkedAt:string;tools:Tool[]}>('integration:motion:capabilities');const workspaceData=await read<WorkspaceData>('integration:motion:workspaces');return {connected:Boolean(t),endpoint:MOTION_ENDPOINT,connectedAt:t?.connectedAt,scope:t?.scope,checkedAt:c?.checkedAt,tools:c?.tools||[],workspaceData,syncActive:false};}
+export async function disconnectMotion(actorId:string){await db.inboundEvent.deleteMany({where:{provider:'motion_connection',OR:[{externalId:{in:[CONNECTION,'integration:motion:capabilities','integration:motion:workspaces']}},{externalId:{startsWith:'integration:motion:reports:'}}]}});await db.auditEvent.create({data:{actorId,action:'motion.disconnected'}});}
+
+import {unpackMotion,motionWorkspaces,motionReports,type MotionWorkspace,type MotionReport} from './motion-data';
+type WorkspaceData={checkedAt:string;workspaces:MotionWorkspace[];source:unknown};
+type ReportData={checkedAt:string;workspaceId:string;reports:MotionReport[];source:unknown};
+async function readMotionTool(name:'get_auth_context'|'get_reports',args:Record<string,unknown>){
+ const caps=await read<{tools:Tool[]}>('integration:motion:capabilities');const tool=caps?.tools.find(t=>t.name===name);if(!tool)throw new Error('Test the Motion connection first');
+ const schema=tool.inputSchema as {required?:string[];properties?:Record<string,unknown>}|undefined;
+ for(const k of schema?.required||[])if(!(k in args))throw new Error('Motion requires additional report settings');
+ for(const k of Object.keys(args))if(schema?.properties&&!(k in schema.properties))throw new Error('Unsupported Motion report setting');
+ const rpc=await motionSession();return unpackMotion(await rpc('tools/call',{name,arguments:args},2));
+}
+export async function loadMotionWorkspaces(){const source=await readMotionTool('get_auth_context',{});const data={checkedAt:new Date().toISOString(),workspaces:motionWorkspaces(source),source};await save('integration:motion:workspaces',data);return data;}
+export async function loadMotionReports(workspaceId:string){const context=await loadMotionWorkspaces();if(!context.workspaces.some(w=>w.id===workspaceId))throw new Error('Choose a workspace available to your Motion account');const source=await readMotionTool('get_reports',{workspaceId});const data={checkedAt:new Date().toISOString(),workspaceId,reports:motionReports(source),source};await save('integration:motion:reports:'+workspaceId,data);return data;}
+export async function cachedMotionReports(workspaceId:string){const c=await read<WorkspaceData>('integration:motion:workspaces');return c?.workspaces.some(w=>w.id===workspaceId)?read<ReportData>('integration:motion:reports:'+workspaceId):null;}
