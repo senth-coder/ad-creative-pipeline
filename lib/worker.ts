@@ -1,7 +1,7 @@
 import {z} from 'zod';
 
-export const workerTypes=['delivery.ready','delivery.drive_verified','job.created','job.assigned','review.internal.ready','review.client.ready','review.changes_required','job.blocked','job.transition','job.approved','job.delivered'] as const;
-export type WorkerAction={id:string;kind:'folder'|'copy'|'slack';name?:string;parentId?:string;sourceId?:string;recipient?:string;text?:string;itemId?:string;versionFolder?:string};
+export const workerTypes=['notification.channel','delivery.ready','delivery.drive_verified','job.created','job.assigned','review.internal.ready','review.client.ready','review.changes_required','job.blocked','job.transition','job.approved','job.delivered'] as const;
+export type WorkerAction={id:string;kind:'folder'|'copy'|'slack';name?:string;parentId?:string;sourceId?:string;recipient?:string;channelId?:string;text?:string;itemId?:string;versionFolder?:string};
 export type WorkerState={jobFolderId?:string;versionFolders:Record<string,string>;completedItems:string[];pending?:WorkerAction};
 export type ManifestItem={id:string;sourceUrl:string;sourceAssetId:string;finalName:string;versionFolder:string};
 export type Manifest={batchId:string;jobId:string;jobFolder:string;driveRootId:string;items:ManifestItem[]};
@@ -29,7 +29,7 @@ export const workerResultSchema=z.object({eventId:z.string().min(1),leaseToken:z
 export type WorkerResult=z.infer<typeof workerResultSchema>['result'];
 export function validateWorkerResult(a:WorkerAction,r:WorkerResult){
  if(a.kind==='slack'){
-  if(!/^D[A-Z0-9]+$/.test(r.channel||'')||!/^\d+\.\d+$/.test(r.ts||''))throw new Error('Expected a Slack DM channel and message timestamp');return;
+  if(a.channelId){if(!/^[CG][A-Z0-9]+$/.test(a.channelId)||r.channel!==a.channelId||!/^\d+\.\d+$/.test(r.ts||''))throw new Error('Slack receipt must match the requested channel and include a message timestamp');}else if(!/^D[A-Z0-9]+$/.test(r.channel||'')||!/^\d+\.\d+$/.test(r.ts||''))throw new Error('Expected a Slack DM channel and message timestamp');return;
  }
  if(!/^[a-zA-Z0-9_-]+$/.test(r.id||'')||r.name!==a.name||!r.parents?.includes(a.parentId!))throw new Error('Drive result does not match the requested name and parent folder');
  if(a.kind==='folder'&&r.mimeType!=='application/vnd.google-apps.folder')throw new Error('Drive result is not a folder');

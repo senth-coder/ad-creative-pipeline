@@ -1,3 +1,4 @@
+import {queueChannelNotices} from '@/lib/channel-notifications-server';
 import {wakeWorker} from '@/lib/worker-wake';
 import {Prisma} from '@prisma/client';
 import {sharedFields,typeFields,requiredBriefProblem,type BriefField} from '@/lib/templates';
@@ -39,6 +40,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
    const job=await tx.job.findUniqueOrThrow({where:{id},include:jobInclude});
    await tx.auditEvent.create({data:{jobId:id,actorId:user.id,action:'job.updated',before:{brief:existing.brief,briefRevision:existing.briefRevision,assigneeId:existing.assigneeId,dueAt:existing.dueAt.toISOString(),reviewUrl:existing.reviewUrl},after:{briefRevision:job.briefRevision,brief:data.brief,assigneeId:job.assigneeId,dueAt:job.dueAt.toISOString(),reviewUrl:job.reviewUrl}}});
    if(assignee!==undefined&&assignee?.id!==existing.assigneeId)await tx.outboxEvent.create({data:{type:'job.assigned',payload:{jobId:id,assigneeId:assignee?.id||null,assigneeSlackId:assignee?.slackUserId||null}}});
+   if(assignee!==undefined&&assignee?.id!==existing.assigneeId)await queueChannelNotices(tx,job,{to:job.status,assignment:true});
    return job;
  });
  wakeWorker();return NextResponse.json({job:await serializeJobForUi(updated)});

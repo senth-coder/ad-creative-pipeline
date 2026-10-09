@@ -1,3 +1,4 @@
+import {queueChannelNotices} from '@/lib/channel-notifications-server';
 import {canonicalQaClient,chooseQa} from '@/lib/qa-routing';
 import {briefPlan,flexibleFields} from '@/lib/brief-plan';
 import {wakeWorker} from '@/lib/worker-wake';
@@ -52,6 +53,7 @@ export async function POST(request:Request) {
    if(eventId)await tx.inboundEvent.update({where:{id:eventId},data:{jobId:job.id}});
    await tx.auditEvent.create({data:{jobId:job.id,actorId:user.id,action:'job.created',after:{number:job.number,status:'BRIEFED'}}});
    await tx.outboxEvent.create({data:{type:'job.created',payload:{jobId:job.id,jobNumber:job.number,clientId:client.id,assigneeSlackId:assignee?.slackUserId||null}}});
+   await queueChannelNotices(tx,job,{to:job.status,assignment:true});
    return job;
  });
  wakeWorker();return NextResponse.json({job:await serializeJobForUi(created)},{status:201});

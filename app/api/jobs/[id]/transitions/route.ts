@@ -1,3 +1,4 @@
+import {queueChannelNotices} from '@/lib/channel-notifications-server';
 import {assignedQaId} from '@/lib/qa-routing';
 import {wakeWorker} from '@/lib/worker-wake';
 import {lockClient} from '@/lib/locking';
@@ -58,6 +59,7 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
    await tx.auditEvent.create({data:{jobId:id,actorId:user.id,action:next==='In Production'&&current!=='Briefed'?'review.changes_required':'job.transition',before:{status:job.status},after:{status:toDbStatus[next],approvalEvidenceUrl:evidence},reason:effectiveReason}});
    const type=next==='Internal Review'?'review.internal.ready':next==='Client Review'?'review.client.ready':next==='Approved'?'job.approved':next==='In Production'&&current!=='Briefed'?'review.changes_required':'job.transition';
    await tx.outboxEvent.create({data:{type,payload:{jobId:id,clientId:job.clientId,from:job.status,to:toDbStatus[next],reason:effectiveReason,feedbackUrl:operations.feedbackUrl,revisionDue:operations.revisionDue,assigneeSlackId:job.assignee?.slackUserId,approvalOwnerEmail:job.client.plan?.approverEmail,releaseOwnerEmail:job.client.plan?.releaseOwnerEmail,qaSlackIds}}});
+   await queueChannelNotices(tx,job,{from:job.status,to:toDbStatus[next],...(revision?{reason:effectiveReason,feedbackUrl:operations.feedbackUrl,revisionDue:operations.revisionDue}:{})});
    if(revision)await tx.assetVersion.updateMany({where:{variant:{jobId:id}},data:{approved:false,review:Prisma.DbNull}});
    if(next==='Approved'){const batch=await tx.deliveryBatch.create({data:{jobId:id}});await queueDelivery(tx,batch.id,user.id);}
    return tx.job.findUniqueOrThrow({where:{id},include:jobInclude});
