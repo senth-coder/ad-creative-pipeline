@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { currentUser, mayCreate } from '@/lib/permissions';
 import { error, jsonBody } from '@/lib/api';
-import { jobInclude, serializeJob } from '@/lib/serialize';
+import { serializeJobForUi,serializeJobsForUi,jobInclude, serializeJob } from '@/lib/serialize';
 import { variantsFor, type CreativeType } from '@/lib/workflow';
 import type { Prisma } from '@prisma/client';
 import {sharedFields,typeFields,requiredBriefProblem, type BriefField} from '@/lib/templates';
@@ -17,7 +17,7 @@ export async function GET() {
  const user=await currentUser(); if(!user)return error('Sign in required',401);
  const where=user.role==='ADMIN'||user.role==='STRATEGIST'?{}:user.role==='MAKER'?{assigneeId:user.id}:user.role==='QA'?{client:{qaMembers:{some:{userId:user.id}}}}:{client:{mediaBuyerId:user.id}};
  const jobs=await db.job.findMany({where,include:jobInclude,orderBy:{number:'desc'},take:500});
- return NextResponse.json({jobs:jobs.map(serializeJob)});
+ return NextResponse.json({jobs:await serializeJobsForUi(jobs)});
 }
 
 export async function POST(request:Request) {
@@ -49,6 +49,6 @@ export async function POST(request:Request) {
    await tx.outboxEvent.create({data:{type:'job.created',payload:{jobId:job.id,jobNumber:job.number,clientId:client.id,assigneeSlackId:assignee?.slackUserId||null}}});
    return job;
  });
- wakeWorker();return NextResponse.json({job:serializeJob(created)},{status:201});
+ wakeWorker();return NextResponse.json({job:await serializeJobForUi(created)},{status:201});
  }catch(e){return error((e as Error).message,409)}
 }

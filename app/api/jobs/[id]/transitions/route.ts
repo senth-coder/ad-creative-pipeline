@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { currentUser, mayCreate } from '@/lib/permissions';
 import { error, jsonBody } from '@/lib/api';
-import { jobInclude, serializeJob, toDbStatus } from '@/lib/serialize';
+import { serializeJobForUi,serializeJobsForUi,jobInclude, serializeJob, toDbStatus } from '@/lib/serialize';
 import { operationsFor, reviewReadiness } from '@/lib/operations';
 import {routeQa,releaseProblem} from '@/lib/assurance';
 import {readGovernance,serializeAsset} from '@/lib/assurance-server';
@@ -59,6 +59,6 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
    if(next==='Approved'){const batch=await tx.deliveryBatch.create({data:{jobId:id}});await queueDelivery(tx,batch.id,user.id);}
    return tx.job.findUniqueOrThrow({where:{id},include:jobInclude});
   });
-  wakeWorker();return NextResponse.json({job:serializeJob(updated)});
+  wakeWorker();return NextResponse.json({job:await serializeJobForUi(updated)});
  } catch(e) {return error((e as Error).message,409)}
 }

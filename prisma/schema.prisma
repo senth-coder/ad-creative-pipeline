@@ -262,6 +262,8 @@ model AuditEvent {
 }
 
 model ClientPlan {
+  priority String @default("Normal")
+  deliverySchedule Json?
   id String @id @default(cuid())
   clientId String @unique
   client Client @relation(fields: [clientId], references: [id])

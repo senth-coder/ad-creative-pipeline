@@ -1,0 +1,13 @@
+'use client';
+import type {Job} from '@/lib/workflow';
+import {cadenceLabels,cadenceProgress,defaultSchedule,readSchedule,type DeliverySchedule} from '@/lib/client-cadence';
+import {localDate} from '@/lib/operations';
+
+export function ClientScheduleEditor({value,onChange}:{value:unknown;onChange:(schedule:DeliverySchedule)=>void}){
+ const schedule=readSchedule(value)||defaultSchedule();
+ return <section className="client-schedules"><h3>Delivery targets by format</h3><p>Targets count delivered variants, not job cards. Statics includes carousels; videos includes motion. Each format has its own cycle. Job due dates stay manual.</p>{(['statics','videos'] as const).map(format=>{const row=schedule[format];return <fieldset key={format}><legend>{format==='statics'?'Statics & carousels':'Videos & motion'}</legend><label className="schedule-toggle"><input type="checkbox" checked={row.enabled} onChange={e=>onChange({...schedule,[format]:{...row,enabled:e.target.checked}})}/> Set a recurring delivery target</label>{row.enabled&&<div className="field-grid"><label>Delivery frequency<select value={row.cadence} onChange={e=>onChange({...schedule,[format]:{...row,cadence:e.target.value as typeof row.cadence}})}>{Object.entries(cadenceLabels).map(([key,label])=><option value={key} key={key}>{label}</option>)}</select></label><label>Variants per cycle<input required type="number" min="1" max="10000" value={row.target} onChange={e=>onChange({...schedule,[format]:{...row,target:+e.target.value}})}/></label><label>First cycle starts<input required type="date" value={row.start} onChange={e=>onChange({...schedule,[format]:{...row,start:e.target.value}})}/></label></div>}</fieldset>})}</section>;
+}
+export function ClientScheduleProgress({value,jobs,client,compact=false}:{value:unknown;jobs:Job[];client:string;compact?:boolean}){
+ const schedule=readSchedule(value);if(!schedule)return null;
+ return <div className={compact?'client-cycle-summary':'client-cycle-progress'}>{(['statics','videos'] as const).filter(f=>schedule[f].enabled).map(format=>{const s=schedule[format],p=cadenceProgress(jobs,client,format,s,localDate());return <section key={format}><strong>{format==='statics'?'Statics':'Videos'} · {cadenceLabels[s.cadence]}</strong><span>{p.delivered} / {s.target} variants delivered</span><small>{p.upcoming?'Starts':'Cycle'} {p.from} → {p.through}</small>{!compact&&<><progress aria-label={`${format} delivery target for ${client}`} max={s.target} value={Math.min(p.delivered,s.target)}/><p>{p.remaining===0?'Target met':`${p.remaining} still to deliver · ${p.planned} planned this cycle`}</p>{p.unplanned>0&&<p className="ops-warning">{p.unplanned} more variants need to be planned.</p>}</>}</section>})}</div>;
+}

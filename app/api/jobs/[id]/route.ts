@@ -7,13 +7,13 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { currentUser, mayCreate, mayView } from '@/lib/permissions';
 import { error, jsonBody } from '@/lib/api';
-import { jobInclude, serializeJob } from '@/lib/serialize';
+import { serializeJobForUi,serializeJobsForUi,jobInclude, serializeJob } from '@/lib/serialize';
 
 const editSchema=z.object({brief:z.record(z.string(),z.string()).optional(),title:z.string().trim().min(2).max(160).optional(),expectedUpdatedAt:z.string().optional(),assignee:z.string().trim().optional(),due:z.iso.date().optional(),reviewUrl:z.union([z.url().refine(v=>/^https?:\/\//i.test(v)),z.literal('')]).optional()});
 export async function GET(_request:Request,{params}:{params:Promise<{id:string}>}) {
  const user=await currentUser();if(!user)return error('Sign in required',401);
  const {id}=await params;const job=await db.job.findUnique({where:{id},include:jobInclude});if(!job)return error('Job not found',404);if(!await mayView(user,job))return error('Not permitted',403);
- return NextResponse.json({job:serializeJob(job)});
+ return NextResponse.json({job:await serializeJobForUi(job)});
 }
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}) {
  const user=await currentUser();if(!user)return error('Sign in required',401);
@@ -39,6 +39,6 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
    if(assignee!==undefined&&assignee?.id!==existing.assigneeId)await tx.outboxEvent.create({data:{type:'job.assigned',payload:{jobId:id,assigneeId:assignee?.id||null,assigneeSlackId:assignee?.slackUserId||null}}});
    return job;
  });
- wakeWorker();return NextResponse.json({job:serializeJob(updated)});
+ wakeWorker();return NextResponse.json({job:await serializeJobForUi(updated)});
  }catch(e){return error((e as Error).message,409)}
 }

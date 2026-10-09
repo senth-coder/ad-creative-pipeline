@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import {Prisma} from '@prisma/client';
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { currentUser, mayCreate } from '@/lib/permissions';
@@ -15,7 +16,7 @@ export async function POST(request:Request){
  const parsed=planSchema.safeParse(await jsonBody(request));if(!parsed.success)return error('Invalid client plan');
  const input=parsed.data; if(!await db.client.findUnique({where:{id:input.clientId}}))return error('Client not found',404);
  for(const email of [input.approverEmail,input.releaseOwnerEmail].filter(Boolean)){if(!await db.user.findUnique({where:{email:email.toLowerCase()}}))return error('Owners must be registered team members');}
- const data={...input,approverEmail:input.approverEmail.toLowerCase(),releaseOwnerEmail:input.releaseOwnerEmail.toLowerCase(),cycleStart:new Date(input.cycleStart+'T12:00:00Z')};
+ const data={...input,deliverySchedule:input.deliverySchedule===null?Prisma.DbNull:input.deliverySchedule,approverEmail:input.approverEmail.toLowerCase(),releaseOwnerEmail:input.releaseOwnerEmail.toLowerCase(),cycleStart:new Date(input.cycleStart+'T12:00:00Z')};
  const plan=await db.$transaction(async tx=>{const p=await tx.clientPlan.upsert({where:{clientId:input.clientId},create:data,update:data});await tx.auditEvent.create({data:{actorId:user.id,action:'client.plan.updated',after:input}});return p;});
  return NextResponse.json({plan:{...plan,cycleStart:input.cycleStart}});
 }

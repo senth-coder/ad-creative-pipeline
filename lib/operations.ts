@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {deliveryScheduleSchema} from './client-cadence';
 import type { Job } from './workflow';
 
 export const qaChecks = [
@@ -33,7 +34,7 @@ export function reviewReadiness(job:Job,next:string):string|null {
   if(next==='Internal Review'&&!qaChecks.every(([key])=>ops.checklist.includes(key)))return 'Complete all six pre-review checks first.';
   return null;
 }
-export const planSchema=z.object({clientId:z.string().min(1),cycleStart:z.iso.date(),cadenceDays:z.union([z.literal(7),z.literal(14)]),targetJobs:z.number().int().min(0).max(1000),targetVariants:z.number().int().min(0).max(10000),formatMix:z.string().trim().max(500),approverEmail:z.union([z.email(),z.literal('')]),releaseOwnerEmail:z.union([z.email(),z.literal('')]),notes:z.string().max(1500)});
+export const planSchema=z.object({priority:z.enum(['Normal','High','Urgent']).optional(),deliverySchedule:deliveryScheduleSchema.nullable().optional(),clientId:z.string().min(1),cycleStart:z.iso.date(),cadenceDays:z.union([z.literal(7),z.literal(14)]),targetJobs:z.number().int().min(0).max(1000),targetVariants:z.number().int().min(0).max(10000),formatMix:z.string().trim().max(500),approverEmail:z.union([z.email(),z.literal('')]),releaseOwnerEmail:z.union([z.email(),z.literal('')]),notes:z.string().max(1500)});
 export type ClientPlan=z.infer<typeof planSchema>;
 export type TeamMember={id:string;name:string;email:string;role:string;weeklyCapacityHours:number};
 export type PlanClient={id:string;name:string;code:string;plan:ClientPlan|null};
@@ -60,4 +61,4 @@ export const intakeSchema=z.object({id:z.string().min(1).max(200),title:z.string
 export function intakeTitle(event:Intake){return event.payload.title||event.payload.task?.title||'Untitled intake';}
 export function duplicateCandidates(event:Intake,events:Intake[]){return events.filter(other=>other.id!==event.id&&!other.dismissedAt&&intakeTitle(other).trim().toLowerCase()===intakeTitle(event).trim().toLowerCase()&&(other.payload.client||'').trim().toLowerCase()===(event.payload.client||'').trim().toLowerCase());}
 
-export function localDate(date=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Toronto',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);}
+export {localDate} from './workspace-date';

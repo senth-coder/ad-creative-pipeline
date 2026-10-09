@@ -22,6 +22,16 @@ try{
  const primary=await db.user.findUniqueOrThrow({where:{email:`qa-${run}@example.com`}});
  const admin=await db.user.findUniqueOrThrow({where:{email:`admin-${run}@example.com`}});
  const client=(await call('/api/admin/clients','POST',{name:`Test-${run}`,code:`T${run.slice(-10)}`,driveRootId:'test-root',mediaBuyerEmail:`media_buyer-${run}@example.com`,qaEmails:[primary.email]},'ADMIN',201)).client;
+ const planPayload={clientId:client.id,cycleStart:'2026-10-09',cadenceDays:7,targetJobs:0,targetVariants:0,formatMix:'',approverEmail:'',releaseOwnerEmail:'',notes:'',priority:'High',deliverySchedule:{statics:{enabled:true,cadence:'weekly',start:'2026-10-09',target:6},videos:{enabled:true,cadence:'biweekly',start:'2026-10-12',target:3}}};
+ await call('/api/operations/plans','POST',planPayload,'MAKER',403);
+ await call('/api/operations/plans','POST',planPayload,'STRATEGIST');
+ let savedPlan=(await call('/api/operations/plans')).clients.find((c:any)=>c.id===client.id).plan;
+ assert.equal(savedPlan.priority,'High');assert.deepEqual(savedPlan.deliverySchedule,planPayload.deliverySchedule);assertions+=2;
+ const {priority,deliverySchedule,...legacyPlan}=planPayload;
+ await call('/api/operations/plans','POST',legacyPlan);
+ savedPlan=(await call('/api/operations/plans')).clients.find((c:any)=>c.id===client.id).plan;
+ assert.equal(savedPlan.priority,'High');assert.deepEqual(savedPlan.deliverySchedule,deliverySchedule);assertions+=2;
+ await call('/api/operations/plans','POST',{...planPayload,deliverySchedule:{...deliverySchedule,statics:{...deliverySchedule.statics,target:0}}},'ADMIN',400);
  // Seed confirmed routing in test fixtures; production confirmation remains Senth-only.
  const g={primaryQaEmail:primary.email,backupQaEmail:admin.email,routingConfirmed:true,rulesConfirmed:true,guidelinesUrl:'https://example.com/guidelines',briefTemplateUrl:'',publisher:'Test',rules:[{id:'brand',label:'Brand checked',kind:'human',phrase:'',sourceUrl:'https://example.com/guidelines',active:true}]};
  await db.client.update({where:{id:client.id},data:{governance:g,governanceVersion:1}});
@@ -96,6 +106,13 @@ try{
  await receipt(batch.id,{id:'slack-ok',type:'slack.dm_confirmed',receiptId:'test-ts',recipientSlackId:'UMEDIA_BUYER'});
  const launch={jobId:job.id,variantCode:'A',platform:'Meta',account:'Test account',status:'Live',plannedAt:'',launchedAt:'2026-10-08',destinationUrl:'https://example.com/product',adUrl:'https://example.com/ad',campaign:'Test campaign',adSet:'Test set',notes:'Recorded test launch; no ad-platform call'};
  await call('/api/operations/launches','POST',launch,'MEDIA_BUYER');
+ assert.equal((await call(`/api/jobs/${job.id}`)).job.launchState,'Partially launched');assertions++;
+ await call('/api/operations/launches','POST',{...launch,variantCode:'B'},'MAKER',403);
+ await db.user.create({data:{email:`other_buyer-${run}@example.com`,name:'Other buyer',role:'MEDIA_BUYER'}});
+ await call('/api/operations/launches','POST',{...launch,variantCode:'B'},'OTHER_BUYER',403);
+ for(const variantCode of ['B','C'])await call('/api/operations/launches','POST',{...launch,variantCode},'MEDIA_BUYER');
+ const allLaunched=(await call(`/api/jobs/${job.id}`)).job;assert.equal(allLaunched.launchState,'Launched');assert.equal(allLaunched.status,'Delivered');assertions+=2;
+
  const metric={assetId:assets[0].id,externalId:`metric-${run}`,provider:'manual',account:'Test account',adId:'test-ad',sourceUrl:'https://example.com/report',periodStart:'2026-10-01',periodEnd:'2026-10-08',currency:'USD',spend:100,impressions:1000,clicks:20,conversions:null,revenue:null,conversionDefinition:'Purchases not available',learning:'Wait for conversion reporting'};
  await call('/api/assurance/metrics','POST',metric,'MEDIA_BUYER');await call('/api/assurance/metrics','POST',metric,'MEDIA_BUYER');await call('/api/assurance/metrics','POST',{...metric,spend:200},'MEDIA_BUYER',409);
  await call('/api/admin/readiness','GET',undefined,'MAKER',403);
@@ -136,5 +153,9 @@ try{
  assert.equal((await db.job.findUniqueOrThrow({where:{id:wjob.id}})).status,'DELIVERED');assertions++;
  await call('/api/assurance/clients','POST',{clientId:client.id,expectedVersion:1,governance:{...g,routingConfirmed:false}},'ADMIN');
  assert.equal(await db.clientQa.count({where:{clientId:client.id}}),0);assertions++;
+ const deliveredUi=(await call(`/api/jobs/${wjob.id}`)).job;
+ assert.equal(deliveredUi.launchState,'Awaiting launch');assertions++;
+ const summaryUi=(await call(`/api/jobs/${job.id}`)).job;
+ assert.equal(summaryUi.mediaBuyer,`MEDIA_BUYER-${run}`);assertions++;
  console.log(JSON.stringify({passed:true,assertions,jobNumber:job.number,variants:job.variants.length,externalCalls:'none; signed worker receipts simulated',database:'isolated PostgreSQL'},null,2));
 }finally{await db.$disconnect()}

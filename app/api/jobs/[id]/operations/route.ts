@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { currentUser,mayCreate,mayView } from '@/lib/permissions';
 import { error,jsonBody } from '@/lib/api';
-import { jobInclude,serializeJob } from '@/lib/serialize';
+import {serializeJobForUi, jobInclude,serializeJob } from '@/lib/serialize';
 import { operationsSchema } from '@/lib/operations';
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
  const user=await currentUser();if(!user)return error('Sign in required',401);
@@ -16,6 +16,6 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
  const count=await tx.job.updateMany({where:{id,updatedAt:job.updatedAt},data:{operations:parsed.data}});if(count.count!==1)throw new Error('Job changed. Refresh and try again.');
  await tx.auditEvent.create({data:{jobId:id,actorId:user.id,action:'job.readiness.updated',after:parsed.data}});
  if(parsed.data.blockerReason)await tx.outboxEvent.create({data:{type:'job.blocked',payload:{jobId:id,clientId:job.clientId,reason:parsed.data.blockerReason,owner:parsed.data.blockerOwner,followUp:parsed.data.blockedUntil}}});
- return tx.job.findUniqueOrThrow({where:{id},include:jobInclude});});wakeWorker();return NextResponse.json({job:serializeJob(saved)});
+ return tx.job.findUniqueOrThrow({where:{id},include:jobInclude});});wakeWorker();return NextResponse.json({job:await serializeJobForUi(saved)});
  }catch(e){return error((e as Error).message,409)}
 }
