@@ -142,3 +142,5 @@ h1{font-size:25px}.eyebrow{font-size:9px;margin-bottom:8px}
 .modal-backdrop:focus{outline:none}.create-modal.ops-form{padding-top:16px}
 
 .discard-dialog{margin:auto;width:min(440px,calc(100vw - 32px));padding:28px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:0 20px 80px #0008}.discard-dialog h2{font-size:20px}.discard-dialog p{font-size:14px;color:var(--muted)}
+
+.workspace-image{display:block;flex-shrink:0;object-fit:cover;border-radius:9px}.brand-image{border-radius:10px}
