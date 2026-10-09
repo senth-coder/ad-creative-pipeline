@@ -1,7 +1,8 @@
 import {briefCode} from './brief-plan';
 import {slackText} from './worker';
 export const pipelineChannel={id:'C0BC58ZU6BH',name:'adrequest-pipeline'};
-export const designerChannels:Record<string,{id:string;name:string}>={U0BAFC76AQ1:{id:'C0AMNN6LC9M',name:'ai-videos'}};
+const sharedDesignChannel={id:'C0B4YUVPHHN',name:'ad-design-ghost-internal'};
+export const designerChannels:Record<string,{id:string;name:string}>={U0BAFC76AQ1:{id:'C0AMNN6LC9M',name:'ai-videos'},U0B44LNMSTU:sharedDesignChannel,U0B4YV1AV1N:sharedDesignChannel};
 const statuses:Record<string,string>={BRIEFED:'Briefed',IN_PRODUCTION:'In Production',INTERNAL_REVIEW:'Internal QA',CLIENT_REVIEW:'Client QA',APPROVED:'Approved',DELIVERED:'Delivered'};
 export type NoticeJob={id:string;number:number;title:string;status:string;type:string;dueAt:Date;client:{name:string};assignee:{name:string;slackUserId:string|null}|null};
 export function channelNotices(job:NoticeJob,change:{from?:string;to:string;reason?:string;feedbackUrl?:string;revisionDue?:string;assignment?:boolean},base:string){
@@ -11,7 +12,7 @@ export function channelNotices(job:NoticeJob,change:{from?:string;to:string;reas
  const text=`*${revision?'Changes required — returned to production':change.assignment?'Creative assigned':'Creative status update'}*\n*${code}* · ${slackText(job.client.name)} · ${slackText(job.title)}\nStatus: ${slackText(status)}\nFormat: ${slackText(job.type)}\nDesigner / editor: ${owner}\n${revision?'Revision due':'Due'}: ${slackText(revision?change.revisionDue||'Not set':job.dueAt.toISOString().slice(0,10))}${change.reason?`\nReason: ${slackText(change.reason)}`:''}${change.feedbackUrl?`\nFeedback: ${slackText(change.feedbackUrl)}`:''}\nBrief: ${base.replace(/\/$/,'')}/?job=${encodeURIComponent(job.id)}`;
  // Keep one global pipeline notice; additionally notify an explicitly routed designer channel.
  const destinations=[pipelineChannel];
- const designer=job.assignee?.slackUserId?designerChannels[job.assignee.slackUserId]:undefined;
+ const designer=(job.assignee?.slackUserId?designerChannels[job.assignee.slackUserId]:undefined)||(job.assignee?.name==='Illia'?sharedDesignChannel:undefined);
  if(designer&&designer.id!==pipelineChannel.id)destinations.push(designer);
  return destinations.map(channel=>({channelId:channel.id,channelName:channel.name,text}));
 }
